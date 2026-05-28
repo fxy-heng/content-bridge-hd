@@ -21,7 +21,7 @@ ContentBridge 是一个面向创作者的多平台内容发布工具。用户输
 
 ## 当前实现
 
-当前版本是一个无需安装第三方依赖的静态 MVP：
+当前版本是一个无需安装第三方依赖的静态应用：
 
 - Frontend: HTML + CSS + JavaScript ES Modules
 - Core: 平台适配器、校验器、模拟发布器
@@ -29,27 +29,6 @@ ContentBridge 是一个面向创作者的多平台内容发布工具。用户输
 - Storage: 浏览器 LocalStorage 保存发布日志
 
 后续如迁移到 React、TypeScript、Vite、后端服务或数据库，需要在 README 和 PR 描述中同步更新依赖说明。
-
-## 本地运行
-
-直接用浏览器打开 `index.html` 即可演示。
-
-也可以在项目目录启动任意静态服务器，例如：
-
-```bash
-python -m http.server 5173
-```
-
-然后访问 `http://localhost:5173`。
-
-## 测试
-
-需要 Node.js 18 或更高版本。
-
-```bash
-npm run check
-npm test
-```
 
 ## 原创功能说明
 
@@ -63,10 +42,32 @@ npm test
 
 如后续引入第三方库、参考代码或复用历史代码，需要在 PR 描述和 README 中明确说明。
 
+## 本地运行
+
+需要 Node.js 18 或更高版本。
+
+```bash
+npm start
+```
+
+然后访问 `http://localhost:5173`。
+
+如果只是查看静态文件，也可以打开 `index.html`；推荐使用 `npm start`，因为部分浏览器会限制本地 ES Module 加载。
+
+## 测试
+
+```bash
+npm run check
+npm test
+```
+
 ## 当前文档
 
 - [项目计划](./PROJECT_PLAN.md)
 - [PR 与 Commit 计划](./PR_COMMIT_PLAN.md)
+- [架构设计](./docs/architecture.md)
+- [Demo 视频脚本](./docs/demo-script.md)
+- [提交检查清单](./docs/submission-checklist.md)
 
 ## Demo 视频
 
