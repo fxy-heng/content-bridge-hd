@@ -32,4 +32,5 @@ git push -u origin main
 - `feat: scaffold content bridge mvp`
 - `feat: enhance publishing workspace workflow`
 - `docs: add architecture and demo materials`
-
+- `docs: add pull request records and github setup`
+- `chore: use project npm cache`
