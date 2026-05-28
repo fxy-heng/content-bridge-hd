@@ -1,0 +1,10 @@
+{
+  "name": "content-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/adapters.test.js",
+    "check": "node --check src/core/adapters.js && node --check src/core/publisher.js && node --check src/app.js"
+  }
+}
