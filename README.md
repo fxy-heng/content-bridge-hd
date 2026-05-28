@@ -68,6 +68,8 @@ npm test
 - [架构设计](./docs/architecture.md)
 - [Demo 视频脚本](./docs/demo-script.md)
 - [提交检查清单](./docs/submission-checklist.md)
+- [PR 记录草案](./docs/pr-records.md)
+- [GitHub 推送说明](./docs/github-setup.md)
 
 ## Demo 视频
 
