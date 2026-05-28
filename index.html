@@ -12,12 +12,21 @@
         <div>
           <p class="eyebrow">ContentBridge</p>
           <h1>多平台内容发布工作台</h1>
+          <p class="subtitle">一份原始内容，自动适配公众号、知乎、B站、小红书，并完成模拟发布。</p>
         </div>
-        <div class="status-strip">
-          <span>公众号</span>
-          <span>知乎</span>
-          <span>B站</span>
-          <span>小红书</span>
+        <div class="metric-row">
+          <div>
+            <strong id="platformCount">4</strong>
+            <span>目标平台</span>
+          </div>
+          <div>
+            <strong id="qualityScore">--</strong>
+            <span>质量评分</span>
+          </div>
+          <div>
+            <strong id="logCount">0</strong>
+            <span>发布记录</span>
+          </div>
         </div>
       </section>
 
@@ -35,17 +44,24 @@
 
           <label>
             正文
-            <textarea id="sourceBody" name="body" rows="14" placeholder="输入准备发布的正文内容，系统会按平台自动改写格式和风格。"></textarea>
+            <textarea id="sourceBody" name="body" rows="13" placeholder="输入准备发布的正文内容，系统会按平台自动改写格式和风格。"></textarea>
           </label>
 
-          <label>
-            标签
-            <input id="sourceTags" name="tags" placeholder="用逗号分隔，例如 AI工具,内容创作,效率" />
-          </label>
+          <div class="two-fields">
+            <label>
+              标签
+              <input id="sourceTags" name="tags" placeholder="用逗号分隔，例如 AI工具,内容创作,效率" />
+            </label>
+
+            <label>
+              封面图地址
+              <input id="coverUrl" name="coverUrl" placeholder="可选 URL" />
+            </label>
+          </div>
 
           <label>
-            封面图地址
-            <input id="coverUrl" name="coverUrl" placeholder="可选，例如 https://example.com/cover.png" />
+            计划发布时间
+            <input id="scheduleAt" name="scheduleAt" type="datetime-local" />
           </label>
 
           <fieldset>
@@ -58,6 +74,7 @@
 
           <div class="actions">
             <button type="button" class="primary" id="adaptButton">自动适配</button>
+            <button type="button" id="saveDraft">保存草稿</button>
             <button type="button" id="publishButton">一键模拟发布</button>
             <button type="button" id="exportButton">导出 JSON</button>
           </div>
@@ -68,6 +85,15 @@
             <h2>平台预览</h2>
             <p id="summaryText">等待输入内容</p>
           </div>
+
+          <section class="quality-panel" aria-label="内容质量建议">
+            <div>
+              <strong id="qualityHeadline">内容质量检查</strong>
+              <p id="qualityHint">输入内容后会生成跨平台发布建议。</p>
+            </div>
+            <ul id="qualityList"></ul>
+          </section>
+
           <div class="preview-grid" id="previewGrid"></div>
         </section>
       </section>
@@ -84,4 +110,3 @@
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
-
