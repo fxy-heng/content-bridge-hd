@@ -59,6 +59,23 @@
             </label>
           </div>
 
+          <div class="two-fields">
+            <label>
+              目标受众
+              <input id="audience" name="audience" placeholder="例如 独立创作者、运营同学" />
+            </label>
+
+            <label>
+              品牌语气
+              <input id="voice" name="voice" placeholder="例如 专业、克制、可执行" />
+            </label>
+          </div>
+
+          <label>
+            行动引导
+            <input id="cta" name="cta" placeholder="例如 欢迎收藏，并在评论区分享你的发布流程" />
+          </label>
+
           <label>
             计划发布时间
             <input id="scheduleAt" name="scheduleAt" type="datetime-local" />
@@ -66,17 +83,57 @@
 
           <fieldset>
             <legend>目标平台</legend>
-            <label class="choice"><input type="checkbox" name="platform" value="wechat" checked /> 公众号</label>
-            <label class="choice"><input type="checkbox" name="platform" value="zhihu" checked /> 知乎</label>
-            <label class="choice"><input type="checkbox" name="platform" value="bilibili" checked /> B站</label>
-            <label class="choice"><input type="checkbox" name="platform" value="rednote" checked /> 小红书</label>
+            <div id="platformChoices" class="platform-choices"></div>
           </fieldset>
+
+          <details class="extension-panel">
+            <summary>扩展更多平台</summary>
+            <div class="extension-grid">
+              <label>
+                平台 Key
+                <input id="customKey" placeholder="例如 douyin" />
+              </label>
+              <label>
+                平台名称
+                <input id="customName" placeholder="例如 抖音" />
+              </label>
+              <label>
+                标题上限
+                <input id="customTitleMax" type="number" min="8" value="55" />
+              </label>
+              <label>
+                标签上限
+                <input id="customTagMax" type="number" min="1" value="8" />
+              </label>
+              <label>
+                正文建议字数
+                <input id="customBodyMin" type="number" min="1" value="60" />
+              </label>
+              <label>
+                平台风格
+                <input id="customTone" placeholder="例如 短视频口播" />
+              </label>
+              <label>
+                发布类型
+                <input id="customMode" placeholder="例如 短视频文案" />
+              </label>
+              <label class="choice">
+                <input id="customCover" type="checkbox" /> 建议封面
+              </label>
+            </div>
+            <div class="actions">
+              <button type="button" id="addPlatform">添加平台</button>
+              <button type="button" id="resetPlatforms">重置自定义平台</button>
+            </div>
+          </details>
 
           <div class="actions">
             <button type="button" class="primary" id="adaptButton">自动适配</button>
             <button type="button" id="saveDraft">保存草稿</button>
             <button type="button" id="publishButton">一键模拟发布</button>
             <button type="button" id="exportButton">导出 JSON</button>
+            <button type="button" id="importButton">导入工作区</button>
+            <input id="importFile" class="hidden-file" type="file" accept="application/json" />
           </div>
         </form>
 

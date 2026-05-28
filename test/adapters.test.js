@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {
   adaptForPlatform,
   adaptForPlatforms,
+  getPlatformRegistry,
+  sanitizeCustomPlatforms,
   scoreSourceContent,
   validateAdaptedContent
 } from "../src/core/adapters.js";
@@ -13,6 +15,17 @@ const source = {
   tags: "AI工具,内容创作,效率,多平台发布",
   coverUrl: ""
 };
+
+const customPlatforms = [
+  {
+    key: "douyin",
+    displayName: "抖音",
+    tone: "短视频口播",
+    publishMode: "短视频文案",
+    limits: { titleMax: 30, tagMax: 6, bodyMin: 50 },
+    requiresCover: true
+  }
+];
 
 const tests = [];
 
@@ -40,6 +53,28 @@ test("keeps platform-specific title limits", () => {
   assert.ok(zhihu.title.length <= 50);
 });
 
+test("registers and adapts custom platforms", () => {
+  const registry = getPlatformRegistry(customPlatforms);
+  const result = adaptForPlatform(source, "douyin", customPlatforms);
+
+  assert.ok(registry.order.includes("douyin"));
+  assert.equal(result.displayName, "抖音");
+  assert.ok(result.title.length <= 30);
+  assert.ok(result.body.includes("抖音 版本"));
+});
+
+test("sanitizes invalid custom platforms", () => {
+  const result = sanitizeCustomPlatforms([
+    { key: "wechat", displayName: "重复平台" },
+    { key: " bad key !! ", displayName: "" },
+    { key: "toutiao", displayName: "今日头条", limits: { titleMax: "70" } }
+  ]);
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].key, "toutiao");
+  assert.equal(result[0].limits.titleMax, 70);
+});
+
 test("validates empty titles and bodies as errors", () => {
   const result = validateAdaptedContent("wechat", {
     title: "",
@@ -63,6 +98,22 @@ test("scores source content with actionable suggestions", () => {
 
   assert.ok(result.score < 80);
   assert.ok(result.suggestions.length >= 3);
+});
+
+test("builds title options and ai prompts for adapted content", () => {
+  const result = adaptForPlatform(
+    {
+      ...source,
+      audience: "内容创作者",
+      voice: "专业克制",
+      cta: "欢迎收藏"
+    },
+    "wechat"
+  );
+
+  assert.ok(result.titleOptions.length >= 2);
+  assert.ok(result.aiPrompt.includes("公众号"));
+  assert.ok(result.aiPrompt.includes("目标受众：内容创作者"));
 });
 
 test("simulated publisher returns publish results", async () => {

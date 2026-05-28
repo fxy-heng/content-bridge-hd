@@ -17,53 +17,104 @@ export const platformMeta = {
     displayName: "B站",
     limits: { titleMax: 80, tagMax: 10, bodyMin: 50 },
     tone: "视频简介",
-    publishMode: "视频稿件"
+    publishMode: "视频稿件",
+    requiresCover: true
   },
   rednote: {
     displayName: "小红书",
     limits: { titleMax: 20, tagMax: 10, bodyMin: 40 },
     tone: "种草笔记",
-    publishMode: "图文笔记"
+    publishMode: "图文笔记",
+    requiresCover: true
   }
 };
 
-export function normalizeContent(input) {
+export function normalizeContent(input = {}) {
   return {
     title: cleanText(input.title),
     body: cleanBody(input.body),
     tags: normalizeTags(input.tags),
     coverUrl: cleanText(input.coverUrl),
     scheduleAt: cleanText(input.scheduleAt),
+    audience: cleanText(input.audience),
+    voice: cleanText(input.voice),
+    cta: cleanText(input.cta),
     authorNote: cleanText(input.authorNote)
   };
 }
 
-export function adaptForPlatforms(input, platformKeys = platformOrder) {
-  const source = normalizeContent(input);
-  return platformKeys.map((platform) => adaptForPlatform(source, platform));
+export function sanitizeCustomPlatforms(customPlatforms = []) {
+  return customPlatforms
+    .map((item) => ({
+      key: cleanText(item.key).toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+      displayName: cleanText(item.displayName),
+      tone: cleanText(item.tone) || "自定义风格",
+      publishMode: cleanText(item.publishMode) || "自定义发布",
+      limits: {
+        titleMax: toPositiveNumber(item.limits?.titleMax, 60),
+        tagMax: toPositiveNumber(item.limits?.tagMax, 8),
+        bodyMin: toPositiveNumber(item.limits?.bodyMin, 60)
+      },
+      requiresCover: Boolean(item.requiresCover)
+    }))
+    .filter((item) => item.key && item.displayName && !platformMeta[item.key]);
 }
 
-export function adaptForPlatform(sourceInput, platform) {
+export function getPlatformRegistry(customPlatforms = []) {
+  const customMeta = {};
+  const customAdapters = {};
+  const customOrder = [];
+
+  sanitizeCustomPlatforms(customPlatforms).forEach((platform) => {
+    customOrder.push(platform.key);
+    customMeta[platform.key] = {
+      displayName: platform.displayName,
+      limits: platform.limits,
+      tone: platform.tone,
+      publishMode: platform.publishMode,
+      requiresCover: platform.requiresCover
+    };
+    customAdapters[platform.key] = (source) => adaptGenericPlatform(source, platform);
+  });
+
+  return {
+    order: [...platformOrder, ...customOrder],
+    meta: { ...platformMeta, ...customMeta },
+    adapters: { ...builtInAdapters, ...customAdapters }
+  };
+}
+
+export function adaptForPlatforms(input, platformKeys = platformOrder, customPlatforms = []) {
+  const source = normalizeContent(input);
+  return platformKeys.map((platform) => adaptForPlatform(source, platform, customPlatforms));
+}
+
+export function adaptForPlatform(sourceInput, platform, customPlatforms = []) {
   const source = normalizeContent(sourceInput);
-  const adapter = adapters[platform];
+  const registry = getPlatformRegistry(customPlatforms);
+  const adapter = registry.adapters[platform];
   if (!adapter) {
     throw new Error(`Unsupported platform: ${platform}`);
   }
 
   const content = adapter(source);
+  const meta = registry.meta[platform];
+
   return {
     ...content,
     platform,
-    displayName: platformMeta[platform].displayName,
-    tone: platformMeta[platform].tone,
-    publishMode: platformMeta[platform].publishMode,
+    displayName: meta.displayName,
+    tone: meta.tone,
+    publishMode: meta.publishMode,
     scheduleAt: source.scheduleAt,
-    validation: validateAdaptedContent(platform, content)
+    titleOptions: buildTitleOptions(content.title, source, meta.limits.titleMax),
+    aiPrompt: buildAiPrompt(source, meta, content),
+    validation: validateAdaptedContent(platform, content, customPlatforms)
   };
 }
 
-export function validateAdaptedContent(platform, content) {
-  const meta = platformMeta[platform];
+export function validateAdaptedContent(platform, content, customPlatforms = []) {
+  const meta = getPlatformRegistry(customPlatforms).meta[platform];
   if (!meta) {
     throw new Error(`Unsupported platform: ${platform}`);
   }
@@ -87,7 +138,7 @@ export function validateAdaptedContent(platform, content) {
   if (!content.tags.length) {
     issues.push({ level: "warning", message: "建议至少添加 1 个标签" });
   }
-  if (!content.coverUrl && (platform === "bilibili" || platform === "rednote")) {
+  if (!content.coverUrl && meta.requiresCover) {
     issues.push({ level: "warning", message: "该平台建议补充封面图" });
   }
 
@@ -126,8 +177,15 @@ export function scoreSourceContent(input) {
     score -= 8;
     suggestions.push("正文缺少句子分隔，可能影响自动分段和要点提取。");
   }
+  if (!source.audience) {
+    score -= 6;
+    suggestions.push("建议补充目标受众，平台适配会更贴近真实读者。");
+  }
   if (!source.scheduleAt) {
     suggestions.push("可设置计划发布时间，用于演示排期发布能力。");
+  }
+  if (!source.cta) {
+    suggestions.push("可加入行动引导，例如关注、评论、收藏或领取资料。");
   }
 
   return {
@@ -136,7 +194,7 @@ export function scoreSourceContent(input) {
   };
 }
 
-const adapters = {
+const builtInAdapters = {
   wechat(source) {
     const title = source.title || "一篇值得收藏的内容创作复盘";
     const body = [
@@ -154,8 +212,10 @@ const adapters = {
       "- 标签是否覆盖主题、场景和目标人群",
       "",
       "## 结语",
-      "多平台发布的重点不是机械复制，而是保持核心观点一致，同时让表达方式适配平台语境。"
-    ].join("\n");
+      "多平台发布的重点不是机械复制，而是保持核心观点一致，同时让表达方式适配平台语境。",
+      source.cta ? "" : "",
+      source.cta ? `行动建议：${source.cta}` : ""
+    ].filter((line) => line !== undefined).join("\n");
 
     return {
       title: clamp(title, 64),
@@ -181,8 +241,10 @@ const adapters = {
       "先沉淀一份原始内容，再围绕平台限制生成不同标题、摘要、标签和正文结构。这样可以减少重复排版，也能让内容更贴近平台用户预期。",
       "",
       "### 最后",
-      "当格式、标签、摘要和平台限制都能自动处理时，创作者的注意力才能回到内容本身。"
-    ].join("\n");
+      "当格式、标签、摘要和平台限制都能自动处理时，创作者的注意力才能回到内容本身。",
+      source.cta ? "" : "",
+      source.cta ? `如果这个方法对你有帮助，${source.cta}` : ""
+    ].filter((line) => line !== undefined).join("\n");
 
     return {
       title: clamp(title, 50),
@@ -209,6 +271,8 @@ const adapters = {
       "02:40 自动适配与校验",
       "04:10 一键模拟发布",
       "05:20 扩展更多平台的架构",
+      "",
+      source.cta ? `互动引导：${source.cta}` : "互动引导：欢迎在评论区交流你的多平台发布流程。",
       "",
       `相关标签：${formatHashtags(source.tags, "#")}`
     ].join("\n");
@@ -237,6 +301,8 @@ const adapters = {
       "",
       "我的建议：先写一份原始内容，再用平台适配规则生成不同版本。",
       "",
+      source.cta ? `${source.cta}` : "收藏起来，下次发布前直接照着检查。",
+      "",
       formatHashtags(source.tags, "#")
     ].join("\n");
 
@@ -249,6 +315,34 @@ const adapters = {
     };
   }
 };
+
+function adaptGenericPlatform(source, platform) {
+  const title = clamp(source.title || `${platform.displayName} 内容发布草稿`, platform.limits.titleMax);
+  const body = [
+    `${platform.displayName} 版本`,
+    "",
+    `目标受众：${source.audience || "当前平台用户"}`,
+    `表达风格：${source.voice || platform.tone}`,
+    "",
+    "核心内容：",
+    ensureParagraph(source.body),
+    "",
+    "发布要点：",
+    buildBulletList(source.body, 4),
+    "",
+    source.cta ? `行动引导：${source.cta}` : "行动引导：欢迎互动、收藏或转发。",
+    "",
+    formatHashtags(source.tags, "#")
+  ].join("\n");
+
+  return {
+    title,
+    body,
+    tags: source.tags.slice(0, platform.limits.tagMax),
+    coverUrl: source.coverUrl,
+    summary: `按 ${platform.displayName} 的 ${platform.tone} 风格生成的自定义平台文案。`
+  };
+}
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -349,4 +443,40 @@ function formatHashtags(tags, prefix) {
     return `${prefix}内容创作 ${prefix}效率工具 ${prefix}多平台发布`;
   }
   return normalized.map((tag) => `${prefix}${tag.replace(/^#/, "")}`).join(" ");
+}
+
+function toPositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
+}
+
+function buildTitleOptions(title, source, maxLength) {
+  const base = cleanText(title) || cleanText(source.title) || "多平台内容发布效率提升";
+  return unique([
+    clamp(base, maxLength),
+    clamp(`${base}：给创作者的实用流程`, maxLength),
+    clamp(`如何把${base.replace(/[?？]/g, "")}落地？`, maxLength)
+  ]);
+}
+
+function buildAiPrompt(source, meta, content) {
+  return [
+    `请将下面内容改写为适合「${meta.displayName}」发布的版本。`,
+    `平台风格：${meta.tone}。`,
+    `发布类型：${meta.publishMode}。`,
+    `标题不超过 ${meta.limits.titleMax} 字，标签不超过 ${meta.limits.tagMax} 个。`,
+    source.audience ? `目标受众：${source.audience}。` : "",
+    source.voice ? `品牌语气：${source.voice}。` : "",
+    source.cta ? `行动引导：${source.cta}。` : "",
+    "",
+    "请输出：",
+    "1. 3 个标题备选",
+    "2. 适配后的正文",
+    "3. 标签列表",
+    "4. 发布前检查提醒",
+    "",
+    `参考标题：${content.title}`,
+    "原始内容：",
+    source.body || "暂无正文"
+  ].filter(Boolean).join("\n");
 }

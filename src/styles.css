@@ -32,6 +32,10 @@ button:hover {
   border-color: #2e6f63;
 }
 
+.hidden-file {
+  display: none;
+}
+
 .primary {
   background: #1f5f68;
   border-color: #1f5f68;
@@ -179,9 +183,6 @@ textarea {
 fieldset {
   border: 1px solid #d1d8d5;
   border-radius: 8px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
   margin: 0;
   padding: 12px;
 }
@@ -198,8 +199,37 @@ legend {
   font-weight: 500;
 }
 
+.choice span {
+  color: #6b7578;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .choice input {
   width: auto;
+}
+
+.platform-choices,
+.extension-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.extension-panel {
+  border: 1px solid #d1d8d5;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.extension-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.extension-grid {
+  margin-top: 12px;
 }
 
 .actions,
@@ -280,6 +310,20 @@ legend {
   font-size: 12px;
 }
 
+.title-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.title-options button {
+  padding: 6px 8px;
+  background: #f4f7f6;
+  color: #374044;
+  font-size: 12px;
+}
+
 .platform-name {
   margin: 0 0 4px;
   color: #2e6f63;
@@ -296,6 +340,22 @@ legend {
 .preview-card textarea {
   min-height: 240px;
   margin: 8px 0 12px;
+}
+
+.prompt-panel {
+  margin-top: 12px;
+  border-top: 1px solid #edf0ef;
+  padding-top: 10px;
+}
+
+.prompt-panel summary {
+  cursor: pointer;
+  color: #1f5f68;
+  font-weight: 800;
+}
+
+.prompt-panel textarea {
+  min-height: 180px;
 }
 
 .tag-row,
@@ -413,7 +473,8 @@ legend {
 
   .preview-grid,
   .two-fields,
-  fieldset,
+  .platform-choices,
+  .extension-grid,
   .metric-row {
     grid-template-columns: 1fr;
   }
