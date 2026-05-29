@@ -83,7 +83,13 @@ const elements = {
   customBodyMin: document.querySelector("#customBodyMin"),
   customTone: document.querySelector("#customTone"),
   customMode: document.querySelector("#customMode"),
-  customCover: document.querySelector("#customCover")
+  customCover: document.querySelector("#customCover"),
+  wechatAppId: document.querySelector("#wechatAppId"),
+  wechatAppSecret: document.querySelector("#wechatAppSecret"),
+  wechatAuthor: document.querySelector("#wechatAuthor"),
+  wechatStatus: document.querySelector("#wechatStatus"),
+  saveWechatCreds: document.querySelector("#saveWechatCreds"),
+  removeWechatCreds: document.querySelector("#removeWechatCreds")
 };
 
 elements.adaptButton.addEventListener("click", adaptCurrentContent);
@@ -113,6 +119,8 @@ elements.importPlatforms.addEventListener("click", () => elements.platformPreset
 elements.platformPresetFile.addEventListener("change", importCustomPlatforms);
 elements.exportRules.addEventListener("click", exportPlatformRules);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
+elements.saveWechatCreds.addEventListener("click", saveWechatCredentials);
+elements.removeWechatCreds.addEventListener("click", removeWechatCredentials);
 
 sourceInputs().forEach((input) => {
   input.addEventListener("input", debounce(() => {
@@ -123,6 +131,7 @@ sourceInputs().forEach((input) => {
 
 renderTemplateOptions();
 renderPlatformChoices();
+loadCredentialStatus();
 restoreDraftOrSample();
 adaptCurrentContent();
 renderLogs();
@@ -186,15 +195,27 @@ async function publishCurrentContent() {
     adaptCurrentContent();
   }
 
-  const results = await publishToPlatforms(state.adapted);
-  state.logs = [...results, ...state.logs].slice(0, 50);
-  saveJson(storageKeys.logs, state.logs);
-  renderLogs();
+  elements.publishButton.disabled = true;
+  elements.publishButton.textContent = "发布中...";
+  elements.summaryText.textContent = "正在发布到各平台...";
 
-  const scheduledCount = results.filter((item) => item.status === "scheduled").length;
-  const successCount = results.filter((item) => item.status === "success").length;
-  const failedCount = results.filter((item) => item.status === "failed").length;
-  elements.summaryText.textContent = `已处理 ${results.length} 个平台：成功 ${successCount}，排期 ${scheduledCount}，失败 ${failedCount}`;
+  try {
+    const results = await publishToPlatforms(state.adapted);
+    state.logs = [...results, ...state.logs].slice(0, 50);
+    saveJson(storageKeys.logs, state.logs);
+    renderLogs();
+
+    const scheduledCount = results.filter((item) => item.status === "scheduled").length;
+    const successCount = results.filter((item) => item.status === "success").length;
+    const failedCount = results.filter((item) => item.status === "failed").length;
+
+    const realCount = results.filter((item) => item.detail).length;
+    const realNote = realCount ? ` (${realCount} 个真实发布)` : " (模拟)";
+    elements.summaryText.textContent = `已处理 ${results.length} 个平台：成功 ${successCount}，排期 ${scheduledCount}，失败 ${failedCount}${realNote}`;
+  } finally {
+    elements.publishButton.disabled = false;
+    elements.publishButton.textContent = "一键发布";
+  }
 }
 
 function exportWorkspace() {
@@ -675,6 +696,86 @@ function clearLogs() {
   state.logs = [];
   saveJson(storageKeys.logs, state.logs);
   renderLogs();
+}
+
+async function loadCredentialStatus() {
+  try {
+    const response = await fetch("/api/credentials");
+    if (!response.ok) {
+      return;
+    }
+    const list = await response.json();
+    const wechat = list.find((item) => item.platform === "wechat");
+    if (wechat && wechat.connected) {
+      elements.wechatAppId.value = wechat.detail.appId || "";
+      elements.wechatAuthor.value = wechat.detail.author || "";
+      setWechatStatus("connected", "已连接");
+    } else {
+      setWechatStatus("disconnected", "未配置");
+    }
+  } catch {
+    setWechatStatus("disconnected", "后端未启动");
+  }
+}
+
+async function saveWechatCredentials() {
+  const appId = elements.wechatAppId.value.trim();
+  const appSecret = elements.wechatAppSecret.value.trim();
+  const author = elements.wechatAuthor.value.trim();
+
+  if (!appId || !appSecret) {
+    setWechatStatus("disconnected", "请填写 AppID 和 AppSecret");
+    return;
+  }
+
+  try {
+    // Save credentials
+    const saveResponse = await fetch("/api/credentials/wechat", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appId, appSecret, author })
+    });
+
+    if (!saveResponse.ok) {
+      const err = await saveResponse.json();
+      setWechatStatus("disconnected", err.error || "保存失败");
+      return;
+    }
+
+    // Verify by calling the verify endpoint
+    const verifyResponse = await fetch("/api/wechat/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appId, appSecret })
+    });
+
+    const verifyData = await verifyResponse.json();
+    if (verifyData.ok) {
+      setWechatStatus("connected", "凭证有效，已保存");
+      elements.wechatAppSecret.value = "";
+    } else {
+      setWechatStatus("disconnected", `验证失败: ${verifyData.error}`);
+    }
+  } catch (err) {
+    setWechatStatus("disconnected", `连接失败: ${err.message}`);
+  }
+}
+
+async function removeWechatCredentials() {
+  try {
+    await fetch("/api/credentials/wechat", { method: "DELETE" });
+    elements.wechatAppId.value = "";
+    elements.wechatAppSecret.value = "";
+    elements.wechatAuthor.value = "";
+    setWechatStatus("disconnected", "未配置");
+  } catch {
+    setWechatStatus("disconnected", "操作失败");
+  }
+}
+
+function setWechatStatus(className, message) {
+  elements.wechatStatus.className = `account-status ${className}`;
+  elements.wechatStatus.textContent = message;
 }
 
 function loadJson(key, fallback) {

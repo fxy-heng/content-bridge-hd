@@ -139,11 +139,33 @@
             </div>
           </details>
 
+          <details class="extension-panel">
+            <summary>账号设置</summary>
+            <div class="account-form">
+              <label>
+                公众号 AppID
+                <input id="wechatAppId" placeholder="例如 wx1234567890" />
+              </label>
+              <label>
+                公众号 AppSecret
+                <input id="wechatAppSecret" type="password" placeholder="请输入 AppSecret" />
+              </label>
+              <label>
+                作者名称（选填）
+                <input id="wechatAuthor" placeholder="文章作者署名" />
+              </label>
+              <div class="account-status" id="wechatStatus"></div>
+              <button type="button" id="saveWechatCreds">保存并验证</button>
+              <button type="button" id="removeWechatCreds">删除凭证</button>
+            </div>
+            <p class="account-note">B站通过浏览器自动化发布，需要在启动后端服务的电脑上登录 B站后使用。</p>
+          </details>
+
           <div class="actions">
             <button type="button" class="primary" id="adaptButton">自动适配</button>
             <button type="button" id="saveDraft">保存草稿</button>
             <button type="button" id="saveSnapshot">保存版本</button>
-            <button type="button" id="publishButton">一键模拟发布</button>
+            <button type="button" id="publishButton">一键发布</button>
             <button type="button" id="exportButton">导出 JSON</button>
             <button type="button" id="calendarButton">导出日历</button>
             <button type="button" id="importButton">导入工作区</button>

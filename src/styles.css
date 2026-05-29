@@ -236,8 +236,36 @@ legend {
   font-weight: 800;
 }
 
-.extension-grid {
+.extension-grid,
+.account-form {
   margin-top: 12px;
+}
+
+.account-form {
+  display: grid;
+  gap: 12px;
+}
+
+.account-status {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.account-status.connected {
+  background: #e2f4e8;
+  color: #1d6b3b;
+}
+
+.account-status.disconnected {
+  background: #edf0ef;
+  color: #6c7477;
+}
+
+.account-note {
+  margin: 10px 0 0;
+  color: #6c7477;
+  font-size: 13px;
 }
 
 .actions,

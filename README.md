@@ -59,13 +59,27 @@ ContentBridge 是一个面向创作者的多平台内容发布工具。用户输
 
 需要 Node.js 18 或更高版本。
 
+### 纯前端模式（模拟发布）
+
 ```bash
 npm start
 ```
 
-然后访问 `http://localhost:5173`。
+访问 `http://localhost:5173`。
 
-如果只是查看静态文件，也可以打开 `index.html`；推荐使用 `npm start`，因为部分浏览器会限制本地 ES Module 加载。
+### 后端模式（真实发布）
+
+真实发布需要启动后端服务：
+
+```bash
+cd backend && npm start
+```
+
+支持平台：
+- **公众号**：需在页面"账号设置"中配置 AppID + AppSecret，通过微信官方 API 创建草稿并发布。要求已认证公众号 + IP 白名单。
+- **B站**：通过 Puppeteer 浏览器自动化发布到 B站专栏。首次需手动扫码登录。
+
+不配凭证时自动回退到模拟发布模式，不影响现有工作流。
 
 ## 测试
 
