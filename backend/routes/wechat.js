@@ -86,8 +86,13 @@ router.post("/publish", async (req, res, next) => {
       publishedAt: new Date().toISOString()
     });
   } catch (error) {
-    error.status = 502;
-    next(error);
+    res.status(502).json({
+      status: "failed",
+      platform: "wechat",
+      mode: "real",
+      code: "WECHAT_API_ERROR",
+      reason: error.message || "WeChat publish request failed."
+    });
   }
 });
 

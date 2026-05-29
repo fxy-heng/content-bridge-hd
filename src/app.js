@@ -42,6 +42,7 @@ const elements = {
   cta: document.querySelector("#cta"),
   platformChoices: document.querySelector("#platformChoices"),
   previewGrid: document.querySelector("#previewGrid"),
+  publishResults: document.querySelector("#publishResults"),
   readinessGrid: document.querySelector("#readinessGrid"),
   readinessSummary: document.querySelector("#readinessSummary"),
   readinessCsv: document.querySelector("#readinessCsv"),
@@ -209,6 +210,7 @@ async function publishCurrentContent() {
     const results = await publishToPlatforms(state.adapted);
     state.logs = [...results, ...state.logs].slice(0, 50);
     saveJson(storageKeys.logs, state.logs);
+    renderPublishResults(results);
     renderLogs();
 
     const scheduledCount = results.filter((item) => item.status === "scheduled").length;
@@ -216,8 +218,11 @@ async function publishCurrentContent() {
     const failedCount = results.filter((item) => item.status === "failed").length;
 
     const realCount = results.filter((item) => item.mode === "real").length;
-    const realNote = realCount ? ` (${realCount} 个真实发布)` : " (模拟)";
+    const realNote = realCount ? ` (${realCount} 个真实发布尝试)` : " (模拟)";
     elements.summaryText.textContent = `已处理 ${results.length} 个平台：成功 ${successCount}，排期 ${scheduledCount}，失败 ${failedCount}${realNote}`;
+  } catch (err) {
+    elements.summaryText.textContent = `发布请求失败：${err.message}`;
+    elements.publishResults.innerHTML = `<article class="publish-result failed"><strong>发布请求失败</strong><p>${escapeHtml(err.message)}</p></article>`;
   } finally {
     elements.publishButton.disabled = false;
     elements.publishButton.textContent = "一键发布";
@@ -595,6 +600,39 @@ function renderIssues(item) {
 function renderLimits(platform) {
   const meta = getPlatformRegistry(state.customPlatforms).meta[platform] || platformMeta[platform];
   return `发布类型：${meta.publishMode}；标题 <= ${meta.limits.titleMax} 字，标签 <= ${meta.limits.tagMax} 个，正文建议 >= ${meta.limits.bodyMin} 字`;
+}
+
+function renderPublishResults(results) {
+  if (!results.length) {
+    elements.publishResults.innerHTML = "";
+    return;
+  }
+
+  elements.publishResults.innerHTML = results
+    .map((result) => {
+      const detail = result.detail || {};
+      const remoteParts = [
+        detail.publishId ? `publishId: ${detail.publishId}` : "",
+        detail.mediaId ? `mediaId: ${detail.mediaId}` : "",
+        detail.currentUrl ? `URL: ${detail.currentUrl}` : ""
+      ].filter(Boolean);
+      const diagnostics = Array.isArray(detail.diagnostics) && detail.diagnostics.length
+        ? `<small>${escapeHtml(detail.diagnostics.join(" / "))}</small>`
+        : "";
+
+      return `
+        <article class="publish-result ${escapeHtml(result.status)}">
+          <div>
+            <strong>${escapeHtml(result.displayName)} · ${escapeHtml(statusLabel(result.status))}</strong>
+            <span>${result.mode === "real" ? "真实发布" : "模拟发布"}</span>
+          </div>
+          <p>${result.reason ? escapeHtml(result.reason) : "已完成请求"}</p>
+          ${remoteParts.length ? `<p>${escapeHtml(remoteParts.join(" · "))}</p>` : ""}
+          ${diagnostics}
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function renderLogs() {

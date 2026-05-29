@@ -67,7 +67,7 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
           const status = realResult.status === "success" ? "success" : "failed";
           return buildResult(item, index, now, status, realResult.reason || "", realResult.detail, "real");
         } catch (err) {
-          console.warn(`Real publish failed for ${item.platform}, using simulation:`, err.message);
+          return buildResult(item, index, now, "failed", err.message || "Real publish request failed.", null, "real");
         }
       }
 

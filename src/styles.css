@@ -285,6 +285,63 @@ legend {
   min-width: 0;
 }
 
+.publish-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.publish-result {
+  border: 1px solid #d7ddda;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.publish-result div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.publish-result strong {
+  color: #1f2528;
+}
+
+.publish-result span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #edf0ef;
+  color: #586266;
+  font-size: 12px;
+}
+
+.publish-result p {
+  margin: 8px 0 0;
+  color: #566164;
+  line-height: 1.5;
+}
+
+.publish-result small {
+  display: block;
+  margin-top: 8px;
+  color: #758083;
+  overflow-wrap: anywhere;
+}
+
+.publish-result.success {
+  border-color: #9fd8b0;
+}
+
+.publish-result.failed {
+  border-color: #f0aaa5;
+}
+
+.publish-result.scheduled {
+  border-color: #aebfda;
+}
+
 .quality-panel {
   display: grid;
   grid-template-columns: minmax(160px, 240px) 1fr;
