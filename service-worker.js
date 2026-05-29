@@ -1,4 +1,4 @@
-const CACHE_NAME = "content-bridge-v1";
+const CACHE_NAME = "content-bridge-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -37,16 +37,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith("/api/")) {
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(event.request).then((response) => {
+    fetch(event.request).then((response) => {
+      if (response.ok) {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    })
+      }
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });
