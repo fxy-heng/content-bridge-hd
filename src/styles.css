@@ -397,8 +397,74 @@ legend {
   color: #1d6b3b;
 }
 
+.insight-panel,
 .log-panel {
   margin-top: 18px;
+}
+
+.insight-panel {
+  background: #fbfbf7;
+  border: 1px solid #d7ddda;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.readiness-card {
+  border: 1px solid #d7ddda;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.readiness-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.readiness-card strong {
+  color: #1f2528;
+}
+
+.readiness-card span {
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+
+.readiness-card p {
+  min-height: 42px;
+  margin: 10px 0;
+  color: #566164;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.readiness-card small {
+  color: #758083;
+}
+
+.readiness-card.ready span {
+  background: #e2f4e8;
+  color: #1d6b3b;
+}
+
+.readiness-card.warning span {
+  background: #fff1d1;
+  color: #73500d;
+}
+
+.readiness-card.blocked span {
+  background: #ffe0de;
+  color: #9f2620;
 }
 
 .log-list {
@@ -472,6 +538,7 @@ legend {
   }
 
   .preview-grid,
+  .readiness-grid,
   .two-fields,
   .platform-choices,
   .extension-grid,

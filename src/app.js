@@ -31,6 +31,8 @@ const elements = {
   cta: document.querySelector("#cta"),
   platformChoices: document.querySelector("#platformChoices"),
   previewGrid: document.querySelector("#previewGrid"),
+  readinessGrid: document.querySelector("#readinessGrid"),
+  readinessSummary: document.querySelector("#readinessSummary"),
   summaryText: document.querySelector("#summaryText"),
   publishLog: document.querySelector("#publishLog"),
   platformCount: document.querySelector("#platformCount"),
@@ -133,6 +135,7 @@ function adaptCurrentContent() {
   elements.platformCount.textContent = String(platforms.length);
   renderQuality();
   renderPreviews();
+  renderReadiness();
 }
 
 async function publishCurrentContent() {
@@ -336,6 +339,39 @@ function renderPreviews() {
   elements.previewGrid.querySelectorAll("[data-export]").forEach((button) => {
     button.addEventListener("click", () => exportPlatformMarkdown(button.dataset.export));
   });
+}
+
+function renderReadiness() {
+  if (!state.adapted.length) {
+    elements.readinessGrid.innerHTML = "";
+    elements.readinessSummary.textContent = "等待生成适配结果";
+    return;
+  }
+
+  const readyCount = state.adapted.filter((item) => item.validation.ok && !item.validation.issues.length).length;
+  const blockedCount = state.adapted.filter((item) => !item.validation.ok).length;
+  const warningCount = state.adapted.length - readyCount - blockedCount;
+  elements.readinessSummary.textContent = `可直接发布 ${readyCount}，需优化 ${warningCount}，阻塞 ${blockedCount}`;
+
+  elements.readinessGrid.innerHTML = state.adapted
+    .map((item) => {
+      const status = !item.validation.ok ? "blocked" : item.validation.issues.length ? "warning" : "ready";
+      const label = status === "ready" ? "可发布" : status === "warning" ? "需优化" : "阻塞";
+      const issueText = item.validation.issues.length
+        ? item.validation.issues.map((issue) => issue.message).join("；")
+        : "校验通过";
+      return `
+        <article class="readiness-card ${status}">
+          <div>
+            <strong>${escapeHtml(item.displayName)}</strong>
+            <span>${label}</span>
+          </div>
+          <p>${escapeHtml(issueText)}</p>
+          <small>${item.scheduleAt ? `计划 ${escapeHtml(item.scheduleAt)}` : "立即发布"}</small>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function updateAdaptedBody(platform, body) {
