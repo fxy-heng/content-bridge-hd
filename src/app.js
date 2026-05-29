@@ -607,12 +607,13 @@ function renderLogs() {
   elements.publishLog.innerHTML = state.logs
     .map((log) => {
       const statusText = statusLabel(log.status);
+      const modeText = log.mode === "real" ? "真实" : "模拟";
       return `
         <article class="log-item">
           <span class="log-status ${log.status}">${statusText}</span>
           <div>
             <strong>${escapeHtml(log.displayName)} | ${escapeHtml(log.title)}</strong>
-            <p>${formatTime(log.publishedAt)}${log.scheduledAt ? ` · 计划 ${escapeHtml(log.scheduledAt)}` : ""}${log.reason ? ` · ${escapeHtml(log.reason)}` : ""}</p>
+            <p>${modeText} · ${formatTime(log.publishedAt)}${log.scheduledAt ? ` · 计划 ${escapeHtml(log.scheduledAt)}` : ""}${log.reason ? ` · ${escapeHtml(log.reason)}` : ""}</p>
           </div>
         </article>
       `;
