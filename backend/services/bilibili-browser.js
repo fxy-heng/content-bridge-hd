@@ -1,5 +1,5 @@
 import puppeteer from "puppeteer";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,20 +21,25 @@ async function getBrowser() {
   }
 
   mkdirSync(profileDir, { recursive: true });
-  browserInstance = await puppeteer.launch({
-    headless: process.env.BILIBILI_HEADLESS === "1" ? "new" : false,
-    userDataDir: profileDir,
-    defaultViewport: { width: 1366, height: 900 },
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-blink-features=AutomationControlled",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-features=Translate"
-    ],
-    ignoreDefaultArgs: ["--enable-automation"]
-  });
+  try {
+    browserInstance = await puppeteer.launch({
+      headless: process.env.BILIBILI_HEADLESS === "1" ? "new" : false,
+      executablePath: resolveBrowserPath(),
+      userDataDir: profileDir,
+      defaultViewport: { width: 1366, height: 900 },
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-features=Translate"
+      ],
+      ignoreDefaultArgs: ["--enable-automation"]
+    });
+  } catch (error) {
+    throw new Error(buildBrowserLaunchError(error));
+  }
 
   return browserInstance;
 }
@@ -228,4 +233,30 @@ function failed(reason, page, diagnostics) {
 
 function isLoginUrl(url) {
   return /passport\.bilibili\.com|\/login/i.test(url);
+}
+
+function resolveBrowserPath() {
+  const candidates = [
+    process.env.BILIBILI_BROWSER_PATH,
+    join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+    join(process.env.ProgramFiles || "", "Google", "Chrome", "Application", "chrome.exe"),
+    join(process.env["ProgramFiles(x86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
+    join(process.env.ProgramFiles || "", "Microsoft", "Edge", "Application", "msedge.exe"),
+    join(process.env["ProgramFiles(x86)"] || "", "Microsoft", "Edge", "Application", "msedge.exe")
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+function buildBrowserLaunchError(error) {
+  const message = error?.message || String(error);
+  if (/EPERM|EACCES|spawn/i.test(message)) {
+    return [
+      "B站登录浏览器启动失败：当前后端进程没有权限启动 Chrome/Edge。",
+      "处理方式：关闭当前后端，在普通 PowerShell 或 CMD 中运行 `cd /d F:\\研1\\vibe实践\\content-bridge\\backend && node server.js`；",
+      "如果仍失败，请设置环境变量 BILIBILI_BROWSER_PATH 指向本机 chrome.exe。",
+      `原始错误：${message}`
+    ].join(" ");
+  }
+  return `B站登录浏览器启动失败：${message}`;
 }
