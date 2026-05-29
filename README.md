@@ -111,6 +111,13 @@ npm run smoke
 - [版本说明](./RELEASE_NOTES.md)
 - [交付快照](./HANDOFF.md)
 
+## 贡献者 / Contributors
+
+| 贡献者 | GitHub | 角色 |
+|--------|--------|------|
+| [fxy-heng](https://github.com/fxy-heng) | [@fxy-heng](https://github.com/fxy-heng) | 项目负责人 / 开发 |
+| 2287374549 | [@2287374549](https://github.com/2287374549) | — |
+
 ## Demo 视频
 
 待补充：开发完成后上传至 bilibili、云盘或其他可访问平台，并在此处放置链接。
