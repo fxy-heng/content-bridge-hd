@@ -179,22 +179,19 @@ export async function publishNote({ title, body, tags = [], coverUrl = "", dryRu
       };
     }
 
-    await revealPublishControls(page);
-    const clicked = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"]);
-    if (!clicked) {
+    const publishResult = await publishAndVerify(page, diagnostics);
+    if (publishResult.status !== "success") {
       diagnostics.push(...await collectEditorDiagnostics(page));
       return {
         status: "manual_required",
         platform: "rednote",
         mode: "real",
-        reason: "RedNote note content was filled, but the publish button was not found. Please click publish manually in the kept-open browser page.",
+        reason: publishResult.reason,
         currentUrl: page.url(),
         diagnostics
       };
     }
 
-    diagnostics.push("publish_clicked");
-    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15_000 }).catch(() => {});
     return {
       status: "success",
       platform: "rednote",
@@ -239,7 +236,7 @@ async function ensureImageNoteMode(page, diagnostics) {
     maxY: 180,
     preferShortest: true
   });
-  diagnostics.push(clickedTab ? "image_note_tab_clicked" : "image_note_tab_not_found");
+  diagnostics.push(clickedTab.clicked ? "image_note_tab_clicked" : "image_note_tab_not_found");
   await sleep(800);
 }
 
@@ -344,6 +341,39 @@ async function revealPublishControls(page) {
   await sleep(500);
 }
 
+async function publishAndVerify(page, diagnostics) {
+  await revealPublishControls(page);
+  const clickResult = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"], 18_000);
+  if (!clickResult.clicked) {
+    diagnostics.push(`publish_button_missing=${clickResult.reason || "not_found"}`);
+    return {
+      status: "manual_required",
+      reason: "RedNote note content was filled, but the publish button was not found or was disabled. Please click publish manually in the kept-open browser page."
+    };
+  }
+
+  diagnostics.push(`publish_clicked=${clickResult.text || "unknown"}`);
+  await sleep(800);
+  const confirmResult = await clickElementByText(page, ["确认发布", "确认", "确定", "我知道了"], {
+    minY: 0,
+    preferShortest: true,
+    selectors: ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"],
+    skipDisabled: true,
+    timeout: 3_000
+  });
+  diagnostics.push(confirmResult.clicked ? `confirm_clicked=${confirmResult.text || "unknown"}` : "confirm_not_required");
+
+  const verified = await waitForPublishSuccessSignal(page, diagnostics);
+  if (verified) {
+    return { status: "success" };
+  }
+
+  return {
+    status: "manual_required",
+    reason: "RedNote publish button was clicked, but the page did not show a verifiable success signal. Please confirm any pending dialog or final review state in the kept-open browser page."
+  };
+}
+
 async function uploadImageForRednote(page, imagePath, diagnostics) {
   const chooserOpened = await uploadViaFileChooser(page, imagePath, diagnostics);
   if (chooserOpened) {
@@ -359,7 +389,8 @@ async function uploadViaFileChooser(page, imagePath, diagnostics) {
       maxY: 700,
       preferShortest: true
     });
-    if (!clicked) {
+    if (!clicked.clicked) {
+      chooserPromise.catch(() => {});
       diagnostics.push("upload_button_not_found");
       return false;
     }
@@ -432,7 +463,35 @@ async function collectEditorDiagnostics(page) {
   return diagnostics;
 }
 
-async function clickButtonByText(page, labels) {
+async function waitForPublishSuccessSignal(page, diagnostics) {
+  try {
+    await page.waitForFunction(() => {
+      const text = (document.body?.innerText || "").replace(/\s+/g, "");
+      return [
+        "发布成功",
+        "提交成功",
+        "发布成功啦",
+        "审核中",
+        "等待审核",
+        "已提交审核"
+      ].some((signal) => text.includes(signal)) || /\/publish\/success|\/posts|\/note\/manage|\/manage\/note/i.test(location.href);
+    }, { timeout: 12_000 });
+    diagnostics.push("publish_verified");
+    return true;
+  } catch {
+    const snapshot = await page.evaluate(() => ({
+      url: location.href,
+      text: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 400)
+    })).catch(() => ({ url: page.url(), text: "" }));
+    diagnostics.push(`publish_unverified_url=${snapshot.url}`);
+    if (snapshot.text) {
+      diagnostics.push(`publish_unverified_text=${snapshot.text}`);
+    }
+    return false;
+  }
+}
+
+async function clickButtonByText(page, labels, timeout = 0) {
   return clickElementByText(page, labels, {
     minY: 220,
     preferShortest: true,
@@ -445,49 +504,84 @@ async function clickButtonByText(page, labels) {
       "[class*='publish']",
       "div",
       "span"
-    ]
+    ],
+    skipDisabled: true,
+    timeout
   });
 }
 
 async function clickElementByText(page, labels, options = {}) {
-  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors }) => {
-    const selectorText = (selectors || [
-      "button",
-      "[role='button']",
-      ".btn",
-      "[class*='button']",
-      "a",
-      "div",
-      "span",
-      "li"
-    ]).join(",");
+  const timeout = options.timeout || 0;
+  const deadline = Date.now() + timeout;
+  let lastResult = { clicked: false, reason: "not_found" };
 
-    const candidates = Array.from(document.querySelectorAll(selectorText))
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        const text = (element.textContent || "").replace(/\s+/g, "");
-        return { element, rect, text };
-      })
-      .filter(({ rect, text }) => (
-        text &&
-        rect.width > 0 &&
-        rect.height > 0 &&
-        rect.top >= 0 &&
-        rect.top >= minY &&
-        rect.top <= maxY &&
-        buttonLabels.some((label) => text === label || text.includes(label))
-      ));
+  do {
+    lastResult = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false }) => {
+      const selectorText = (selectors || [
+        "button",
+        "[role='button']",
+        ".btn",
+        "[class*='button']",
+        "a",
+        "div",
+        "span",
+        "li"
+      ]).join(",");
 
-    if (!candidates.length) return false;
-    candidates.sort((a, b) => {
-      if (preferShortest && a.text.length !== b.text.length) {
-        return a.text.length - b.text.length;
-      }
-      return a.rect.top - b.rect.top;
-    });
-    candidates[0].element.click();
-    return true;
-  }, { buttonLabels: labels, ...options });
+      const candidates = Array.from(document.querySelectorAll(selectorText))
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const text = (element.textContent || "").replace(/\s+/g, "");
+          const className = String(element.className || "");
+          const disabled = (
+            element.disabled === true ||
+            element.getAttribute("aria-disabled") === "true" ||
+            element.getAttribute("disabled") !== null ||
+            /disabled|disable|forbid|inactive/i.test(className) ||
+            style.pointerEvents === "none" ||
+            Number(style.opacity) < 0.45
+          );
+          return { element, rect, text, disabled };
+        })
+        .filter(({ rect, text, disabled }) => (
+          text &&
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.top >= 0 &&
+          rect.top >= minY &&
+          rect.top <= maxY &&
+          (!skipDisabled || !disabled) &&
+          buttonLabels.some((label) => text === label || text.includes(label))
+        ));
+
+      if (!candidates.length) return { clicked: false, reason: "not_found" };
+      candidates.sort((a, b) => {
+        const exactA = buttonLabels.includes(a.text) ? 0 : 1;
+        const exactB = buttonLabels.includes(b.text) ? 0 : 1;
+        if (exactA !== exactB) return exactA - exactB;
+        if (preferShortest && a.text.length !== b.text.length) {
+          return a.text.length - b.text.length;
+        }
+        return b.rect.top - a.rect.top;
+      });
+      const target = candidates[0];
+      target.element.scrollIntoView({ block: "center", inline: "center" });
+      target.element.click();
+      return {
+        clicked: true,
+        text: target.text,
+        top: Math.round(target.rect.top)
+      };
+    }, { buttonLabels: labels, ...options });
+
+    if (lastResult.clicked || timeout <= 0) {
+      return lastResult;
+    }
+    await sleep(500);
+  } while (Date.now() < deadline);
+
+  return lastResult;
 }
 
 async function downloadImage(url, diagnostics) {
