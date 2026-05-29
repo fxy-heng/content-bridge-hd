@@ -428,6 +428,7 @@ async function findRednotePublishButton(page) {
   return page.evaluate(() => {
     const candidates = (() => {
       const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
+      const badClasses = /info|preview|phone|cover|mock|screen/i;
       const labels = ["发布", "立即发布", "提交"];
       const selector = ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"].join(",");
 
@@ -486,8 +487,7 @@ async function findRednotePublishButton(page) {
             return null;
           }
           const exact = labels.includes(rawText);
-          const contains = labels.some((label) => rawText.includes(label));
-          if (!exact && !contains) {
+          if (!exact) {
             return null;
           }
           const target = clickableAncestor(element);
@@ -505,7 +505,15 @@ async function findRednotePublishButton(page) {
           const background = style.backgroundColor;
           const redScore = colorScore(background);
           const text = normalize(target.textContent) || rawText;
-          if (badTexts.some((bad) => text.includes(bad))) {
+          const targetClassName = String(target.className || "");
+          const centerX = rect.left + rect.width / 2;
+          if (
+            redScore <= 0 ||
+            centerX > window.innerWidth * 0.78 ||
+            badClasses.test(targetClassName) ||
+            badTexts.some((bad) => text.includes(bad)) ||
+            !labels.includes(rawText)
+          ) {
             return null;
           }
           const exactTarget = labels.includes(text) || exact;
@@ -521,7 +529,7 @@ async function findRednotePublishButton(page) {
             width: Math.round(rect.width),
             height: Math.round(rect.height),
             background,
-            className: String(target.className || "").slice(0, 80),
+            className: targetClassName.slice(0, 80),
             score
           };
         })
@@ -536,19 +544,22 @@ async function listRednotePublishCandidates(page) {
   return page.evaluate(() => (
     (() => {
       const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
+      const badClasses = /info|preview|phone|cover|mock|screen/i;
       const labels = ["发布", "立即发布", "提交"];
       return Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button'],[class*='submit'],[class*='publish'],div,span"))
         .map((element) => {
           const rect = element.getBoundingClientRect();
           const style = getComputedStyle(element);
           const text = (element.textContent || "").replace(/\s+/g, "");
-          if (!text || badTexts.some((bad) => text.includes(bad)) || !labels.some((label) => text === label || text.includes(label))) {
+          if (!text || badTexts.some((bad) => text.includes(bad)) || !labels.includes(text) || badClasses.test(String(element.className || ""))) {
             return null;
           }
           const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(style.backgroundColor || "");
           const red = match ? Number(match[1]) >= 180 && Number(match[2]) <= 120 && Number(match[3]) <= 150 : false;
-          const exact = labels.includes(text);
-          const score = (exact ? 140 : 40) + (red ? 80 : 0) + (rect.top > window.innerHeight - 180 ? 25 : 0);
+          if (!red || rect.left + rect.width / 2 > window.innerWidth * 0.78) {
+            return null;
+          }
+          const score = 140 + 80 + (rect.top > window.innerHeight - 180 ? 25 : 0);
           return {
             text,
             x: Math.round(rect.left + rect.width / 2),
