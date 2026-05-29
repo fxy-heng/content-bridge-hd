@@ -76,6 +76,8 @@ npm test
 - [提交检查清单](./docs/submission-checklist.md)
 - [PR 记录草案](./docs/pr-records.md)
 - [GitHub 推送说明](./docs/github-setup.md)
+- [评审规则对照表](./docs/review-mapping.md)
+- [产品路线图](./docs/roadmap.md)
 
 ## Demo 视频
 
