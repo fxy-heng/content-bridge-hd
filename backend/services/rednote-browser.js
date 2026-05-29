@@ -507,8 +507,9 @@ async function findRednotePublishButton(page) {
           const text = normalize(target.textContent) || rawText;
           const targetClassName = String(target.className || "");
           const centerX = rect.left + rect.width / 2;
+          const nearBottom = rect.top > window.innerHeight - 140;
           if (
-            redScore <= 0 ||
+            !nearBottom ||
             centerX > window.innerWidth * 0.78 ||
             badClasses.test(targetClassName) ||
             badTexts.some((bad) => text.includes(bad)) ||
@@ -518,7 +519,7 @@ async function findRednotePublishButton(page) {
           }
           const exactTarget = labels.includes(text) || exact;
           const shortText = text.length <= 6 ? 25 : 0;
-          const bottomScore = rect.top > window.innerHeight - 180 ? 25 : 0;
+          const bottomScore = nearBottom ? 60 : 0;
           const buttonShape = rect.width >= 60 && rect.width <= 180 && rect.height >= 28 && rect.height <= 60 ? 20 : 0;
           const score = (exactTarget ? 140 : 40) + redScore + shortText + bottomScore + buttonShape;
           return {
@@ -556,7 +557,7 @@ async function listRednotePublishCandidates(page) {
           }
           const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(style.backgroundColor || "");
           const red = match ? Number(match[1]) >= 180 && Number(match[2]) <= 120 && Number(match[3]) <= 150 : false;
-          if (!red || rect.left + rect.width / 2 > window.innerWidth * 0.78) {
+          if (rect.top <= window.innerHeight - 140 || rect.left + rect.width / 2 > window.innerWidth * 0.78) {
             return null;
           }
           const score = 140 + 80 + (rect.top > window.innerHeight - 180 ? 25 : 0);
