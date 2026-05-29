@@ -8,6 +8,7 @@ import {
 } from "./core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
 import { parseMarkdownDraft } from "./core/markdown.js";
+import { exportPlatformPreset, importPlatformPreset } from "./core/platform-presets.js";
 import { publishToPlatforms } from "./core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "./core/reports.js";
 import { createSnapshot, findSnapshot } from "./core/snapshots.js";
@@ -69,6 +70,9 @@ const elements = {
   clearLog: document.querySelector("#clearLog"),
   logCsv: document.querySelector("#logCsv"),
   addPlatform: document.querySelector("#addPlatform"),
+  exportPlatforms: document.querySelector("#exportPlatforms"),
+  importPlatforms: document.querySelector("#importPlatforms"),
+  platformPresetFile: document.querySelector("#platformPresetFile"),
   resetPlatforms: document.querySelector("#resetPlatforms"),
   customKey: document.querySelector("#customKey"),
   customName: document.querySelector("#customName"),
@@ -102,6 +106,9 @@ elements.clearLog.addEventListener("click", clearLogs);
 elements.readinessCsv.addEventListener("click", exportReadinessCsv);
 elements.logCsv.addEventListener("click", exportLogCsv);
 elements.addPlatform.addEventListener("click", addCustomPlatform);
+elements.exportPlatforms.addEventListener("click", exportCustomPlatforms);
+elements.importPlatforms.addEventListener("click", () => elements.platformPresetFile.click());
+elements.platformPresetFile.addEventListener("change", importCustomPlatforms);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
 
 sourceInputs().forEach((input) => {
@@ -384,6 +391,36 @@ function resetCustomPlatforms() {
   renderPlatformChoices();
   adaptCurrentContent();
   elements.summaryText.textContent = "自定义平台已重置";
+}
+
+function exportCustomPlatforms() {
+  downloadText(
+    "content-bridge-platforms.json",
+    JSON.stringify(exportPlatformPreset(state.customPlatforms), null, 2),
+    "application/json"
+  );
+  elements.summaryText.textContent = "平台预设已导出";
+}
+
+async function importCustomPlatforms(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const imported = importPlatformPreset(JSON.parse(await file.text()));
+    const merged = new Map([...state.customPlatforms, ...imported].map((item) => [item.key, item]));
+    state.customPlatforms = [...merged.values()];
+    saveJson(storageKeys.customPlatforms, state.customPlatforms);
+    renderPlatformChoices();
+    adaptCurrentContent();
+    elements.summaryText.textContent = `已导入 ${imported.length} 个平台预设`;
+  } catch {
+    elements.summaryText.textContent = "平台预设导入失败";
+  } finally {
+    event.target.value = "";
+  }
 }
 
 function clearCustomPlatformForm() {

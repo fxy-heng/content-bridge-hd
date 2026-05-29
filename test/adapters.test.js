@@ -9,6 +9,7 @@ import {
 } from "../src/core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar.js";
 import { parseMarkdownDraft } from "../src/core/markdown.js";
+import { exportPlatformPreset, importPlatformPreset } from "../src/core/platform-presets.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "../src/core/reports.js";
 import { createSnapshot, findSnapshot } from "../src/core/snapshots.js";
@@ -198,6 +199,15 @@ test("creates and restores bounded draft snapshots", () => {
   assert.equal(next.length, 2);
   assert.equal(next[0].title, "版本二");
   assert.equal(findSnapshot(next, snapshots[0].id).title, "版本一");
+});
+
+test("exports and imports custom platform presets", () => {
+  const preset = exportPlatformPreset(customPlatforms);
+  const imported = importPlatformPreset(preset);
+
+  assert.equal(preset.version, 1);
+  assert.equal(imported.length, 1);
+  assert.equal(imported[0].key, "douyin");
 });
 
 test("simulated publisher returns publish results", async () => {
