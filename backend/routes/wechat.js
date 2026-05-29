@@ -4,6 +4,7 @@ import {
   createDraft,
   getPublishStatus,
   publishDraft,
+  uploadGeneratedCover,
   uploadImage,
   verifyCredentials
 } from "../services/wechat-api.js";
@@ -58,13 +59,8 @@ router.post("/publish", async (req, res, next) => {
     }
 
     if (!thumbMediaId) {
-      res.status(422).json({
-        status: "failed",
-        platform: "wechat",
-        code: "MISSING_WECHAT_COVER",
-        reason: "WeChat official publishing requires a cover image URL or a saved thumb_media_id."
-      });
-      return;
+      const generated = await uploadGeneratedCover(credentials.appId, credentials.appSecret, title);
+      thumbMediaId = generated.mediaId;
     }
 
     const mediaId = await createDraft(credentials.appId, credentials.appSecret, {

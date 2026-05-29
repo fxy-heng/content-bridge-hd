@@ -97,8 +97,13 @@ export async function publishArticle({ title, body, tags = [], coverUrl = "" }) 
     const titleFilled = await fillFirst(page, [
       'input[placeholder*="标题"]',
       'textarea[placeholder*="标题"]',
+      '[class*="title"] input',
+      '[class*="title"] textarea',
+      '[class*="Title"] input',
+      '[class*="Title"] textarea',
       'input[maxlength="80"]',
-      'input[type="text"]'
+      'input[type="text"]',
+      "textarea"
     ], title.slice(0, 80));
 
     if (!titleFilled) {
@@ -175,19 +180,22 @@ async function gotoEditor(page, diagnostics) {
 }
 
 async function fillFirst(page, selectors, text) {
+  const scopes = [page, ...page.frames()];
   for (const selector of selectors) {
-    const element = await page.$(selector).catch(() => null);
-    if (!element) {
-      continue;
-    }
+    for (const scope of scopes) {
+      const element = await scope.$(selector).catch(() => null);
+      if (!element) {
+        continue;
+      }
 
-    await element.click({ clickCount: 3 }).catch(() => {});
-    await page.keyboard.down("Control");
-    await page.keyboard.press("KeyA");
-    await page.keyboard.up("Control");
-    await page.keyboard.press("Backspace");
-    await element.type(text, { delay: 1 });
-    return true;
+      await element.click({ clickCount: 3 }).catch(() => {});
+      await page.keyboard.down("Control");
+      await page.keyboard.press("KeyA");
+      await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      await element.type(text, { delay: 1 });
+      return true;
+    }
   }
   return false;
 }
