@@ -27,7 +27,7 @@ router.get("/status", async (req, res, next) => {
 });
 
 router.post("/publish", async (req, res, next) => {
-  const { title = "", body = "", tags = [], coverUrl = "" } = req.body || {};
+  const { title = "", body = "", tags = [], coverUrl = "", dryRun = false } = req.body || {};
 
   if (!title.trim() || !body.trim()) {
     res.status(400).json({
@@ -40,7 +40,7 @@ router.post("/publish", async (req, res, next) => {
   }
 
   try {
-    const result = await publishNote({ title, body, tags, coverUrl });
+    const result = await publishNote({ title, body, tags, coverUrl, dryRun });
     const status = result.status === "login_required" ? 409 : 200;
     res.status(status).json(result);
   } catch (error) {

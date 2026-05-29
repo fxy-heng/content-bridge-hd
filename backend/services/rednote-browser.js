@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const profileDir = join(__dirname, "..", "data", "rednote-profile");
 const assetDir = join(__dirname, "..", "data", "rednote-assets");
+const debugDir = join(__dirname, "..", "data", "rednote-debug");
 const loginUrl = "https://creator.xiaohongshu.com/login";
 const homeUrl = "https://creator.xiaohongshu.com/";
 const publishUrls = [
@@ -74,7 +75,7 @@ export async function checkLoginStatus() {
   }
 }
 
-export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
+export async function publishNote({ title, body, tags = [], coverUrl = "", dryRun = false }) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   const diagnostics = [];
@@ -95,12 +96,20 @@ export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
     }
 
     const imagePath = coverUrl ? await downloadImage(coverUrl, diagnostics) : createDefaultCover(title);
-    const uploaded = await uploadFirstFileInput(page, imagePath);
+    await ensureImageNoteMode(page, diagnostics);
+    const uploaded = await uploadImageForRednote(page, imagePath, diagnostics);
     diagnostics.push(uploaded ? "image_uploaded" : "image_upload_input_missing");
+    if (uploaded) {
+      await waitForEditorAfterUpload(page, diagnostics);
+    }
 
     const titleFilled = await fillFirst(page, [
+      "#title-textarea",
+      'textarea#title-textarea',
+      'input#title-textarea',
       'input[placeholder*="标题"]',
       'textarea[placeholder*="标题"]',
+      '[placeholder*="填写标题"]',
       '[class*="title"] input',
       '[class*="title"] textarea',
       "input[type='text']",
@@ -110,10 +119,15 @@ export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
 
     const noteBody = [body, "", ...normalizeTags(tags).map((tag) => `#${tag}`)].join("\n").trim();
     const bodyFilled = await fillFirst(page, [
+      "#post-textarea",
+      'textarea#post-textarea',
       'textarea[placeholder*="正文"]',
       'textarea[placeholder*="描述"]',
       'textarea[placeholder*="分享"]',
+      '[placeholder*="添加正文"]',
+      ".tiptap.ProseMirror",
       'div[contenteditable="true"]',
+      '[contenteditable="plaintext-only"]',
       ".ql-editor",
       ".ProseMirror",
       '[role="textbox"]',
@@ -122,6 +136,7 @@ export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
     diagnostics.push(bodyFilled ? "body_filled" : "body_missing");
 
     if (!uploaded || !titleFilled || !bodyFilled) {
+      diagnostics.push(...await collectEditorDiagnostics(page));
       return {
         status: "manual_required",
         platform: "rednote",
@@ -132,7 +147,20 @@ export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
       };
     }
 
-    const clicked = await clickButtonByText(page, ["发布", "提交", "立即发布"]);
+    if (dryRun) {
+      diagnostics.push("dry_run_publish_skipped");
+      return {
+        status: "draft_ready",
+        platform: "rednote",
+        mode: "real",
+        dryRun: true,
+        currentUrl: page.url(),
+        diagnostics,
+        note: "RedNote fields were filled successfully. Publish click was skipped because dryRun is enabled."
+      };
+    }
+
+    const clicked = await clickButtonByText(page, ["立即发布", "发布", "提交"]);
     if (!clicked) {
       return {
         status: "manual_required",
@@ -185,24 +213,118 @@ async function gotoPublisher(page, diagnostics) {
   throw lastError || new Error("RedNote publisher did not open.");
 }
 
-async function fillFirst(page, selectors, text) {
-  const scopes = [page, ...page.frames()];
-  for (const selector of selectors) {
-    for (const scope of scopes) {
-      const element = await scope.$(selector).catch(() => null);
-      if (!element) {
-        continue;
+async function ensureImageNoteMode(page, diagnostics) {
+  const clickedTab = await clickElementByText(page, ["上传图文"], {
+    maxY: 180,
+    preferShortest: true
+  });
+  diagnostics.push(clickedTab ? "image_note_tab_clicked" : "image_note_tab_not_found");
+  await sleep(800);
+}
+
+async function waitForEditorAfterUpload(page, diagnostics) {
+  const editorSelectors = [
+    "#title-textarea",
+    "#post-textarea",
+    '[placeholder*="标题"]',
+    '[placeholder*="正文"]',
+    ".tiptap.ProseMirror",
+    '[contenteditable="true"]',
+    '[role="textbox"]'
+  ];
+
+  const selector = editorSelectors.join(",");
+  try {
+    await page.waitForSelector(selector, { timeout: 15_000, visible: true });
+    diagnostics.push("editor_ready");
+  } catch {
+    diagnostics.push("editor_ready_timeout");
+  }
+
+  await page.waitForNetworkIdle({ idleTime: 800, timeout: 8_000 }).catch(() => {});
+}
+
+async function fillFirst(page, selectors, text, timeout = 15_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const scopes = [page, ...page.frames()];
+    for (const selector of selectors) {
+      for (const scope of scopes) {
+        const element = await scope.$(selector).catch(() => null);
+        if (!element) {
+          continue;
+        }
+        const visible = await element.isIntersectingViewport().catch(() => true);
+        if (!visible) {
+          continue;
+        }
+        await fillElement(page, element, text);
+        return true;
       }
-      await element.click({ clickCount: 3 }).catch(() => {});
-      await page.keyboard.down("Control");
-      await page.keyboard.press("KeyA");
-      await page.keyboard.up("Control");
-      await page.keyboard.press("Backspace");
-      await element.type(text, { delay: 1 });
-      return true;
     }
+    await sleep(300);
   }
   return false;
+}
+
+async function fillElement(page, element, text) {
+  await element.click({ clickCount: 3 }).catch(() => {});
+  const filledByDom = await element.evaluate((node, value) => {
+    const tagName = node.tagName?.toLowerCase();
+    if (tagName === "input" || tagName === "textarea") {
+      const prototype = tagName === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+      descriptor?.set?.call(node, value);
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+    if (node.isContentEditable) {
+      node.textContent = value;
+      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+      return true;
+    }
+    return false;
+  }, text).catch(() => false);
+
+  if (filledByDom) {
+    return;
+  }
+
+  await page.keyboard.down("Control");
+  await page.keyboard.press("KeyA");
+  await page.keyboard.up("Control");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type(text, { delay: 5 });
+}
+
+async function uploadImageForRednote(page, imagePath, diagnostics) {
+  const chooserOpened = await uploadViaFileChooser(page, imagePath, diagnostics);
+  if (chooserOpened) {
+    return true;
+  }
+  return uploadFirstFileInput(page, imagePath);
+}
+
+async function uploadViaFileChooser(page, imagePath, diagnostics) {
+  try {
+    const chooserPromise = page.waitForFileChooser({ timeout: 5_000 });
+    const clicked = await clickElementByText(page, ["上传图片"], {
+      maxY: 700,
+      preferShortest: true
+    });
+    if (!clicked) {
+      diagnostics.push("upload_button_not_found");
+      return false;
+    }
+    const chooser = await chooserPromise;
+    await chooser.accept([imagePath]);
+    diagnostics.push("file_chooser_upload");
+    return true;
+  } catch (error) {
+    diagnostics.push(`file_chooser_upload_failed=${error.message}`);
+    return false;
+  }
 }
 
 async function uploadFirstFileInput(page, imagePath) {
@@ -211,23 +333,111 @@ async function uploadFirstFileInput(page, imagePath) {
     const input = await scope.$('input[type="file"]').catch(() => null);
     if (input) {
       await input.uploadFile(imagePath);
+      await input.evaluate((element) => {
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+      }).catch(() => {});
       return true;
     }
   }
   return false;
 }
 
+async function collectEditorDiagnostics(page) {
+  const diagnostics = [];
+  mkdirSync(debugDir, { recursive: true });
+  const screenshotPath = join(debugDir, `rednote-editor-${Date.now()}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  diagnostics.push(`debug_screenshot=${screenshotPath}`);
+
+  for (const [frameIndex, frame] of page.frames().entries()) {
+    const frameDiagnostics = await frame.evaluate(() => {
+      const controls = Array.from(document.querySelectorAll("input,textarea,[contenteditable],[role='textbox']"))
+        .slice(0, 20)
+        .map((element, index) => {
+          const rect = element.getBoundingClientRect();
+          const label = [
+            `control_${index}`,
+            element.tagName?.toLowerCase(),
+            element.id ? `#${element.id}` : "",
+            element.className ? `.${String(element.className).trim().replace(/\s+/g, ".").slice(0, 80)}` : "",
+            element.getAttribute("placeholder") ? `placeholder=${element.getAttribute("placeholder")}` : "",
+            element.getAttribute("contenteditable") ? `contenteditable=${element.getAttribute("contenteditable")}` : "",
+            `visible=${rect.width > 0 && rect.height > 0}`
+          ].filter(Boolean);
+          return label.join("|");
+        });
+      const buttons = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button']"))
+        .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .slice(0, 20);
+      const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 500);
+      return { controls, buttons, bodyText };
+    }).catch((error) => ({ controls: [], buttons: [], bodyText: `frame_diagnostics_failed=${error.message}` }));
+
+    diagnostics.push(`frame_${frameIndex}_url=${frame.url()}`);
+    diagnostics.push(frameDiagnostics.controls.length ? `frame_${frameIndex}_controls=${frameDiagnostics.controls.join(" || ")}` : `frame_${frameIndex}_controls_missing`);
+    diagnostics.push(frameDiagnostics.buttons.length ? `frame_${frameIndex}_buttons=${frameDiagnostics.buttons.join(" | ")}` : `frame_${frameIndex}_buttons_missing`);
+    if (frameDiagnostics.bodyText) {
+      diagnostics.push(`frame_${frameIndex}_text=${frameDiagnostics.bodyText}`);
+    }
+  }
+
+  return diagnostics;
+}
+
 async function clickButtonByText(page, labels) {
-  return page.evaluate((buttonLabels) => {
-    const candidates = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button']"));
-    const target = candidates.find((element) => {
-      const text = (element.textContent || "").replace(/\s+/g, "");
-      return buttonLabels.some((label) => text.includes(label));
+  return clickElementByText(page, labels, {
+    minY: 220,
+    preferShortest: true,
+    selectors: [
+      "button",
+      "[role='button']",
+      ".btn",
+      "[class*='button']"
+    ]
+  });
+}
+
+async function clickElementByText(page, labels, options = {}) {
+  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors }) => {
+    const selectorText = (selectors || [
+      "button",
+      "[role='button']",
+      ".btn",
+      "[class*='button']",
+      "a",
+      "div",
+      "span",
+      "li"
+    ]).join(",");
+
+    const candidates = Array.from(document.querySelectorAll(selectorText))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const text = (element.textContent || "").replace(/\s+/g, "");
+        return { element, rect, text };
+      })
+      .filter(({ rect, text }) => (
+        text &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= 0 &&
+        rect.top >= minY &&
+        rect.top <= maxY &&
+        buttonLabels.some((label) => text === label || text.includes(label))
+      ));
+
+    if (!candidates.length) return false;
+    candidates.sort((a, b) => {
+      if (preferShortest && a.text.length !== b.text.length) {
+        return a.text.length - b.text.length;
+      }
+      return a.rect.top - b.rect.top;
     });
-    if (!target) return false;
-    target.click();
+    candidates[0].element.click();
     return true;
-  }, labels);
+  }, { buttonLabels: labels, ...options });
 }
 
 async function downloadImage(url, diagnostics) {
@@ -266,6 +476,10 @@ function normalizeTags(tags) {
 
 function isLoginUrl(url) {
   return /login|passport|signin/i.test(url);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resolveBrowserPath() {
