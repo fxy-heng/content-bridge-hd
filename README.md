@@ -84,6 +84,7 @@ npm run smoke
 - [API 契约草案](./docs/api-contract.md)
 - [贡献规范](./CONTRIBUTING.md)
 - [版本说明](./RELEASE_NOTES.md)
+- [交付快照](./HANDOFF.md)
 
 ## Demo 视频
 
