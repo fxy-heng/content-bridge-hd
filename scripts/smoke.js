@@ -11,6 +11,8 @@ const requiredFiles = [
   "src/core/strategy.js",
   "docs/architecture.md",
   "docs/demo-script.md",
+  "docs/api-contract.md",
+  "examples/workspace-sample.json",
   "README.md"
 ];
 

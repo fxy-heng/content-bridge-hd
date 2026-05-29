@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "exportedAt": "2026-05-29T00:00:00.000Z",
+  "source": {
+    "title": "AI 工具如何提升多平台内容发布效率",
+    "body": "很多创作者会把同一篇内容发布到公众号、知乎、B站和小红书，但每个平台的标题长度、标签习惯、正文结构和表达风格都不一样。\n\n如果每次都手动改写，很容易把时间消耗在复制、排版和检查规则上。",
+    "tags": "AI工具,内容创作,效率,多平台发布",
+    "coverUrl": "",
+    "scheduleAt": "",
+    "audience": "需要持续更新内容的个人创作者和新媒体运营",
+    "voice": "专业、清晰、强调可执行",
+    "cta": "欢迎收藏这套流程，并在评论区分享你的发布渠道"
+  },
+  "customPlatforms": [
+    {
+      "key": "douyin",
+      "displayName": "抖音",
+      "tone": "短视频口播",
+      "publishMode": "短视频文案",
+      "limits": {
+        "titleMax": 30,
+        "tagMax": 6,
+        "bodyMin": 50
+      },
+      "requiresCover": true
+    }
+  ],
+  "adapted": [],
+  "logs": []
+}

@@ -81,6 +81,7 @@ npm run smoke
 - [GitHub 推送说明](./docs/github-setup.md)
 - [评审规则对照表](./docs/review-mapping.md)
 - [产品路线图](./docs/roadmap.md)
+- [API 契约草案](./docs/api-contract.md)
 - [贡献规范](./CONTRIBUTING.md)
 - [版本说明](./RELEASE_NOTES.md)
 
