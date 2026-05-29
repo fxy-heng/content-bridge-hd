@@ -38,6 +38,11 @@
           </div>
 
           <label>
+            内容模板
+            <select id="templateSelect"></select>
+          </label>
+
+          <label>
             标题
             <input id="sourceTitle" name="title" maxlength="120" placeholder="例如：AI 工具如何提升内容创作效率" />
           </label>
@@ -161,6 +166,10 @@
           <p id="readinessSummary">等待生成适配结果</p>
         </div>
         <div id="readinessGrid" class="readiness-grid"></div>
+        <div class="strategy-box">
+          <strong id="strategyPrimary">推荐主平台：--</strong>
+          <ul id="strategyList"></ul>
+        </div>
       </section>
 
       <section class="log-panel">

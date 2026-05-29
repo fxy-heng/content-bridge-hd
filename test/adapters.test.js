@@ -8,6 +8,8 @@ import {
   validateAdaptedContent
 } from "../src/core/adapters.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
+import { buildPublishingStrategy } from "../src/core/strategy.js";
+import { contentTemplates, getTemplate } from "../src/core/templates.js";
 
 const source = {
   title: "AI 工具如何提升多平台内容发布效率",
@@ -114,6 +116,22 @@ test("builds title options and ai prompts for adapted content", () => {
   assert.ok(result.titleOptions.length >= 2);
   assert.ok(result.aiPrompt.includes("公众号"));
   assert.ok(result.aiPrompt.includes("目标受众：内容创作者"));
+});
+
+test("provides reusable source content templates", () => {
+  const template = getTemplate("tutorial");
+
+  assert.ok(contentTemplates.length >= 3);
+  assert.equal(template.key, "tutorial");
+  assert.ok(template.body.includes("第一步"));
+});
+
+test("builds publishing strategy from adapted readiness", () => {
+  const adapted = adaptForPlatforms(source, ["wechat", "zhihu"]);
+  const strategy = buildPublishingStrategy(source, adapted);
+
+  assert.equal(strategy.primaryPlatform, "公众号");
+  assert.ok(strategy.recommendations.length >= 3);
 });
 
 test("simulated publisher returns publish results", async () => {

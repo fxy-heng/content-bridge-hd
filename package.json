@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node test/adapters.test.js",
-    "check": "node --check src/core/adapters.js && node --check src/core/publisher.js && node --check src/app.js && node --check scripts/serve.js"
+    "check": "node --check src/core/adapters.js && node --check src/core/publisher.js && node --check src/core/templates.js && node --check src/core/strategy.js && node --check src/app.js && node --check scripts/serve.js"
   }
 }

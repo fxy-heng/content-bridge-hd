@@ -160,6 +160,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #c8d0cc;
@@ -414,6 +415,28 @@ legend {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: 12px;
   margin-top: 14px;
+}
+
+.strategy-box {
+  margin-top: 14px;
+  border: 1px solid #d7ddda;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.strategy-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #1f5f68;
+}
+
+.strategy-box ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #4f5b5f;
 }
 
 .readiness-card {

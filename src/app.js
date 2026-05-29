@@ -7,6 +7,8 @@ import {
   scoreSourceContent
 } from "./core/adapters.js";
 import { publishToPlatforms } from "./core/publisher.js";
+import { buildPublishingStrategy } from "./core/strategy.js";
+import { contentTemplates, getTemplate } from "./core/templates.js";
 
 const storageKeys = {
   logs: "contentBridge.logs",
@@ -26,6 +28,7 @@ const elements = {
   tags: document.querySelector("#sourceTags"),
   coverUrl: document.querySelector("#coverUrl"),
   scheduleAt: document.querySelector("#scheduleAt"),
+  templateSelect: document.querySelector("#templateSelect"),
   audience: document.querySelector("#audience"),
   voice: document.querySelector("#voice"),
   cta: document.querySelector("#cta"),
@@ -33,6 +36,8 @@ const elements = {
   previewGrid: document.querySelector("#previewGrid"),
   readinessGrid: document.querySelector("#readinessGrid"),
   readinessSummary: document.querySelector("#readinessSummary"),
+  strategyPrimary: document.querySelector("#strategyPrimary"),
+  strategyList: document.querySelector("#strategyList"),
   summaryText: document.querySelector("#summaryText"),
   publishLog: document.querySelector("#publishLog"),
   platformCount: document.querySelector("#platformCount"),
@@ -66,6 +71,10 @@ elements.publishButton.addEventListener("click", publishCurrentContent);
 elements.exportButton.addEventListener("click", exportWorkspace);
 elements.importButton.addEventListener("click", () => elements.importFile.click());
 elements.importFile.addEventListener("change", importWorkspace);
+elements.templateSelect.addEventListener("change", () => {
+  applyTemplate(elements.templateSelect.value);
+  adaptCurrentContent();
+});
 elements.saveDraft.addEventListener("click", saveDraft);
 elements.loadSample.addEventListener("click", () => {
   loadSampleContent();
@@ -82,6 +91,7 @@ sourceInputs().forEach((input) => {
   }, 250));
 });
 
+renderTemplateOptions();
 renderPlatformChoices();
 restoreDraftOrSample();
 adaptCurrentContent();
@@ -136,6 +146,7 @@ function adaptCurrentContent() {
   renderQuality();
   renderPreviews();
   renderReadiness();
+  renderStrategy();
 }
 
 async function publishCurrentContent() {
@@ -215,6 +226,27 @@ function restoreDraftOrSample() {
     return;
   }
   loadSampleContent();
+}
+
+function renderTemplateOptions() {
+  elements.templateSelect.innerHTML = contentTemplates
+    .map((template) => `<option value="${escapeHtml(template.key)}">${escapeHtml(template.name)}</option>`)
+    .join("");
+}
+
+function applyTemplate(key) {
+  const template = getTemplate(key);
+  writeSourceContent({
+    title: template.title,
+    body: template.body,
+    tags: template.tags,
+    audience: template.audience,
+    voice: template.voice,
+    cta: template.cta,
+    coverUrl: elements.coverUrl.value,
+    scheduleAt: elements.scheduleAt.value
+  });
+  autoSaveDraft();
 }
 
 function renderPlatformChoices() {
@@ -374,6 +406,12 @@ function renderReadiness() {
     .join("");
 }
 
+function renderStrategy() {
+  const strategy = buildPublishingStrategy(readSourceContent(), state.adapted);
+  elements.strategyPrimary.textContent = `推荐主平台：${strategy.primaryPlatform}`;
+  elements.strategyList.innerHTML = strategy.recommendations.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
 function updateAdaptedBody(platform, body) {
   const item = state.adapted.find((content) => content.platform === platform);
   if (item) {
@@ -466,22 +504,8 @@ function buildMarkdown(item) {
 }
 
 function loadSampleContent() {
-  writeSourceContent({
-    title: "AI 工具如何提升多平台内容发布效率",
-    body: [
-      "很多创作者会把同一篇内容发布到公众号、知乎、B站和小红书，但每个平台的标题长度、标签习惯、正文结构和表达风格都不一样。",
-      "如果每次都手动改写，很容易把时间消耗在复制、排版和检查规则上。",
-      "更高效的做法是先维护一份原始内容，再用平台适配规则生成不同版本，并在发布前自动检查限制。",
-      "这样既能保持核心观点一致，也能让内容更符合不同平台用户的阅读习惯。",
-      "ContentBridge 的目标是把编辑、适配、校验、排期和模拟发布放进同一个工作台，让创作者快速完成跨平台分发准备。"
-    ].join("\n\n"),
-    tags: "AI工具,内容创作,效率,多平台发布",
-    coverUrl: "",
-    scheduleAt: "",
-    audience: "需要持续更新内容的个人创作者和新媒体运营",
-    voice: "专业、清晰、强调可执行",
-    cta: "欢迎收藏这套流程，并在评论区分享你的发布渠道"
-  });
+  elements.templateSelect.value = "tool-review";
+  applyTemplate("tool-review");
   autoSaveDraft();
 }
 
