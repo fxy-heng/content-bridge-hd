@@ -138,6 +138,7 @@
           <div class="actions">
             <button type="button" class="primary" id="adaptButton">自动适配</button>
             <button type="button" id="saveDraft">保存草稿</button>
+            <button type="button" id="saveSnapshot">保存版本</button>
             <button type="button" id="publishButton">一键模拟发布</button>
             <button type="button" id="exportButton">导出 JSON</button>
             <button type="button" id="calendarButton">导出日历</button>
@@ -164,6 +165,14 @@
 
           <div class="preview-grid" id="previewGrid"></div>
         </section>
+      </section>
+
+      <section class="snapshot-panel">
+        <div class="panel-title">
+          <h2>草稿版本</h2>
+          <p id="snapshotSummary">最多保留 12 个本地版本</p>
+        </div>
+        <div id="snapshotList" class="snapshot-list"></div>
       </section>
 
       <section class="insight-panel">

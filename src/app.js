@@ -10,18 +10,21 @@ import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
 import { parseMarkdownDraft } from "./core/markdown.js";
 import { publishToPlatforms } from "./core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "./core/reports.js";
+import { createSnapshot, findSnapshot } from "./core/snapshots.js";
 import { buildPublishingStrategy } from "./core/strategy.js";
 import { contentTemplates, getTemplate } from "./core/templates.js";
 
 const storageKeys = {
   logs: "contentBridge.logs",
   draft: "contentBridge.draft",
+  snapshots: "contentBridge.snapshots",
   customPlatforms: "contentBridge.customPlatforms"
 };
 
 const state = {
   adapted: [],
   logs: loadJson(storageKeys.logs, []),
+  snapshots: loadJson(storageKeys.snapshots, []),
   customPlatforms: sanitizeCustomPlatforms(loadJson(storageKeys.customPlatforms, []))
 };
 
@@ -44,6 +47,8 @@ const elements = {
   strategyList: document.querySelector("#strategyList"),
   summaryText: document.querySelector("#summaryText"),
   publishLog: document.querySelector("#publishLog"),
+  snapshotList: document.querySelector("#snapshotList"),
+  snapshotSummary: document.querySelector("#snapshotSummary"),
   platformCount: document.querySelector("#platformCount"),
   qualityScore: document.querySelector("#qualityScore"),
   logCount: document.querySelector("#logCount"),
@@ -59,6 +64,7 @@ const elements = {
   markdownButton: document.querySelector("#markdownButton"),
   markdownFile: document.querySelector("#markdownFile"),
   saveDraft: document.querySelector("#saveDraft"),
+  saveSnapshot: document.querySelector("#saveSnapshot"),
   loadSample: document.querySelector("#loadSample"),
   clearLog: document.querySelector("#clearLog"),
   logCsv: document.querySelector("#logCsv"),
@@ -87,6 +93,7 @@ elements.templateSelect.addEventListener("change", () => {
   adaptCurrentContent();
 });
 elements.saveDraft.addEventListener("click", saveDraft);
+elements.saveSnapshot.addEventListener("click", saveSnapshot);
 elements.loadSample.addEventListener("click", () => {
   loadSampleContent();
   adaptCurrentContent();
@@ -109,6 +116,7 @@ renderPlatformChoices();
 restoreDraftOrSample();
 adaptCurrentContent();
 renderLogs();
+renderSnapshots();
 registerServiceWorker();
 
 function sourceInputs() {
@@ -281,6 +289,13 @@ async function importMarkdownDraft(event) {
 function saveDraft() {
   autoSaveDraft();
   elements.summaryText.textContent = "草稿已保存到浏览器本地";
+}
+
+function saveSnapshot() {
+  state.snapshots = createSnapshot(readSourceContent(), state.snapshots);
+  saveJson(storageKeys.snapshots, state.snapshots);
+  renderSnapshots();
+  elements.summaryText.textContent = "草稿版本已保存";
 }
 
 function autoSaveDraft() {
@@ -531,6 +546,40 @@ function renderLogs() {
       `;
     })
     .join("");
+}
+
+function renderSnapshots() {
+  elements.snapshotSummary.textContent = `已保存 ${state.snapshots.length} 个版本，最多保留 12 个`;
+  if (!state.snapshots.length) {
+    elements.snapshotList.innerHTML = '<p class="empty">暂无草稿版本</p>';
+    return;
+  }
+  elements.snapshotList.innerHTML = state.snapshots
+    .map((snapshot) => `
+      <article class="snapshot-item">
+        <div>
+          <strong>${escapeHtml(snapshot.title)}</strong>
+          <p>${formatTime(snapshot.createdAt)}</p>
+        </div>
+        <button type="button" data-restore="${escapeHtml(snapshot.id)}">恢复</button>
+      </article>
+    `)
+    .join("");
+
+  elements.snapshotList.querySelectorAll("[data-restore]").forEach((button) => {
+    button.addEventListener("click", () => restoreSnapshot(button.dataset.restore));
+  });
+}
+
+function restoreSnapshot(id) {
+  const snapshot = findSnapshot(state.snapshots, id);
+  if (!snapshot) {
+    return;
+  }
+  writeSourceContent(snapshot.source);
+  autoSaveDraft();
+  adaptCurrentContent();
+  elements.summaryText.textContent = "草稿版本已恢复";
 }
 
 function copyPlatformContent(platform) {

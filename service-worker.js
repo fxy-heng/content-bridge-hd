@@ -12,7 +12,8 @@ const ASSETS = [
   "./src/core/strategy.js",
   "./src/core/calendar.js",
   "./src/core/reports.js",
-  "./src/core/markdown.js"
+  "./src/core/markdown.js",
+  "./src/core/snapshots.js"
 ];
 
 self.addEventListener("install", (event) => {

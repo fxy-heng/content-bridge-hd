@@ -11,6 +11,7 @@ import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar
 import { parseMarkdownDraft } from "../src/core/markdown.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "../src/core/reports.js";
+import { createSnapshot, findSnapshot } from "../src/core/snapshots.js";
 import { buildPublishingStrategy } from "../src/core/strategy.js";
 import { contentTemplates, getTemplate } from "../src/core/templates.js";
 
@@ -180,6 +181,23 @@ tags: AI工具,内容创作
   assert.equal(draft.title, "标题示例");
   assert.equal(draft.tags, "AI工具,内容创作");
   assert.ok(draft.body.includes("正文第一段"));
+});
+
+test("creates and restores bounded draft snapshots", () => {
+  const snapshots = createSnapshot(
+    { title: "版本一", body: "正文" },
+    [],
+    { now: new Date("2026-05-29T00:00:00.000Z"), limit: 2 }
+  );
+  const next = createSnapshot(
+    { title: "版本二", body: "正文" },
+    snapshots,
+    { now: new Date("2026-05-29T00:01:00.000Z"), limit: 2 }
+  );
+
+  assert.equal(next.length, 2);
+  assert.equal(next[0].title, "版本二");
+  assert.equal(findSnapshot(next, snapshots[0].id).title, "版本一");
 });
 
 test("simulated publisher returns publish results", async () => {

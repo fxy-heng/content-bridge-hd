@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node test/adapters.test.js",
-    "check": "node --check src/core/adapters.js && node --check src/core/publisher.js && node --check src/core/templates.js && node --check src/core/strategy.js && node --check src/core/calendar.js && node --check src/core/reports.js && node --check src/core/markdown.js && node --check src/app.js && node --check service-worker.js && node --check scripts/serve.js && node --check scripts/smoke.js",
+    "check": "node --check src/core/adapters.js && node --check src/core/publisher.js && node --check src/core/templates.js && node --check src/core/strategy.js && node --check src/core/calendar.js && node --check src/core/reports.js && node --check src/core/markdown.js && node --check src/core/snapshots.js && node --check src/app.js && node --check service-worker.js && node --check scripts/serve.js && node --check scripts/smoke.js",
     "smoke": "node scripts/smoke.js"
   }
 }

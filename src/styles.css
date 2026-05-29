@@ -406,15 +406,41 @@ legend {
 }
 
 .insight-panel,
+.snapshot-panel,
 .log-panel {
   margin-top: 18px;
 }
 
-.insight-panel {
+.insight-panel,
+.snapshot-panel {
   background: #fbfbf7;
   border: 1px solid #d7ddda;
   border-radius: 8px;
   padding: 20px;
+}
+
+.snapshot-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d7ddda;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.snapshot-item p {
+  margin: 4px 0 0;
+  color: #6c7477;
+  font-size: 13px;
 }
 
 .readiness-grid {
@@ -569,6 +595,7 @@ legend {
 
   .preview-grid,
   .readiness-grid,
+  .snapshot-list,
   .two-fields,
   .platform-choices,
   .extension-grid,
