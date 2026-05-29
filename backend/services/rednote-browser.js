@@ -16,6 +16,10 @@ const publishUrls = [
 ];
 
 let browserInstance = null;
+let rednoteLoginCache = {
+  checkedAt: 0,
+  status: null
+};
 
 async function getBrowser() {
   if (browserInstance?.isConnected()) {
@@ -46,8 +50,9 @@ async function getBrowser() {
 
 export async function openLoginPage() {
   const browser = await getBrowser();
-  const page = await browser.newPage();
+  const page = await getOrCreateRednotePage(browser);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  rednoteLoginCache = { checkedAt: 0, status: null };
   return {
     ok: true,
     platform: "rednote",
@@ -59,19 +64,33 @@ export async function openLoginPage() {
 }
 
 export async function checkLoginStatus() {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.goto(homeUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await page.waitForNetworkIdle({ idleTime: 800, timeout: 10_000 }).catch(() => {});
-    const currentUrl = page.url();
+  if (rednoteLoginCache.status && Date.now() - rednoteLoginCache.checkedAt < 10_000) {
     return {
+      ...rednoteLoginCache.status,
+      cached: true
+    };
+  }
+
+  const browser = await getBrowser();
+  const page = await getOrCreateRednotePage(browser);
+  try {
+    if (!page.url().startsWith(homeUrl)) {
+      await page.goto(homeUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    }
+    await waitForLoginSignal(page);
+    const currentUrl = page.url();
+    const status = {
       loggedIn: !isLoginUrl(currentUrl),
       currentUrl,
       profileDir
     };
+    rednoteLoginCache = {
+      checkedAt: Date.now(),
+      status
+    };
+    return status;
   } finally {
-    await page.close().catch(() => {});
+    // Keep the page open so the next status check can reuse the logged-in tab quickly.
   }
 }
 
@@ -160,8 +179,10 @@ export async function publishNote({ title, body, tags = [], coverUrl = "", dryRu
       };
     }
 
-    const clicked = await clickButtonByText(page, ["立即发布", "发布", "提交"]);
+    await revealPublishControls(page);
+    const clicked = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"]);
     if (!clicked) {
+      diagnostics.push(...await collectEditorDiagnostics(page));
       return {
         status: "manual_required",
         platform: "rednote",
@@ -220,6 +241,24 @@ async function ensureImageNoteMode(page, diagnostics) {
   });
   diagnostics.push(clickedTab ? "image_note_tab_clicked" : "image_note_tab_not_found");
   await sleep(800);
+}
+
+async function getOrCreateRednotePage(browser) {
+  const pages = await browser.pages();
+  const reusable = pages.find((page) => /creator\.xiaohongshu\.com/.test(page.url()));
+  if (reusable) {
+    await reusable.bringToFront().catch(() => {});
+    return reusable;
+  }
+  return browser.newPage();
+}
+
+async function waitForLoginSignal(page) {
+  await Promise.race([
+    page.waitForFunction(() => !/login|passport|signin/i.test(location.href), { timeout: 5_000 }),
+    page.waitForFunction(() => document.body?.innerText?.includes("笔记管理"), { timeout: 5_000 }),
+    sleep(3_000)
+  ]).catch(() => {});
 }
 
 async function waitForEditorAfterUpload(page, diagnostics) {
@@ -296,6 +335,13 @@ async function fillElement(page, element, text) {
   await page.keyboard.up("Control");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(text, { delay: 5 });
+}
+
+async function revealPublishControls(page) {
+  await page.evaluate(() => {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+  }).catch(() => {});
+  await sleep(500);
 }
 
 async function uploadImageForRednote(page, imagePath, diagnostics) {
@@ -394,7 +440,11 @@ async function clickButtonByText(page, labels) {
       "button",
       "[role='button']",
       ".btn",
-      "[class*='button']"
+      "[class*='button']",
+      "[class*='submit']",
+      "[class*='publish']",
+      "div",
+      "span"
     ]
   });
 }
