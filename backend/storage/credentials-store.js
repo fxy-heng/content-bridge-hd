@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,7 +20,34 @@ function readAll() {
 
 function writeAll(data) {
   mkdirSync(dirname(credentialsFile), { recursive: true });
-  writeFileSync(credentialsFile, JSON.stringify(data, null, 2), "utf8");
+  const payload = JSON.stringify(data, null, 2);
+  const tempFile = `${credentialsFile}.${process.pid}.${Date.now()}.tmp`;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      writeFileSync(tempFile, payload, "utf8");
+      renameSync(tempFile, credentialsFile);
+      return;
+    } catch (error) {
+      lastError = error;
+      try {
+        if (existsSync(tempFile)) {
+          unlinkSync(tempFile);
+        }
+      } catch {
+        // Best effort cleanup only.
+      }
+
+      if (!["EPERM", "EBUSY", "EACCES"].includes(error.code)) {
+        break;
+      }
+      sleep(80 * (attempt + 1));
+    }
+  }
+
+  const message = lastError?.message || "Unknown credential storage error";
+  throw new Error(`Unable to write credential store at ${credentialsFile}: ${message}`);
 }
 
 export function getCredentials(platform) {
@@ -74,4 +101,11 @@ function maskValue(value, visible = 4) {
     return "*".repeat(text.length);
   }
   return `${text.slice(0, visible)}${"*".repeat(Math.min(8, text.length - visible))}`;
+}
+
+function sleep(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // Synchronous retry backoff keeps this tiny storage helper dependency-free.
+  }
 }
