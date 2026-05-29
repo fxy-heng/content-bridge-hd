@@ -2,6 +2,7 @@ import { Router } from "express";
 import { getCredentials } from "../storage/credentials-store.js";
 import {
   createDraft,
+  getAccessToken,
   getPublishStatus,
   publishDraft,
   uploadGeneratedCover,
@@ -99,6 +100,42 @@ router.get("/status", (req, res) => {
     connected: Boolean(credentials?.appId && credentials?.appSecret),
     hasThumbMediaId: Boolean(credentials?.thumbMediaId),
     appId: credentials?.appId ? `${credentials.appId.slice(0, 6)}****` : ""
+  });
+});
+
+router.get("/capabilities", async (req, res) => {
+  const credentials = getCredentials("wechat");
+  if (!credentials?.appId || !credentials?.appSecret) {
+    res.status(400).json({
+      ok: false,
+      platform: "wechat",
+      code: "MISSING_WECHAT_CREDENTIALS",
+      checks: [{ name: "credentials", ok: false, message: "WeChat credentials are not configured." }]
+    });
+    return;
+  }
+
+  const checks = [];
+  try {
+    await getAccessToken(credentials.appId, credentials.appSecret);
+    checks.push({ name: "access_token", ok: true, message: "AppID and AppSecret are valid." });
+  } catch (error) {
+    checks.push({ name: "access_token", ok: false, message: error.message });
+    res.status(200).json({ ok: false, platform: "wechat", checks });
+    return;
+  }
+
+  try {
+    const cover = await uploadGeneratedCover(credentials.appId, credentials.appSecret, "ContentBridge capability test");
+    checks.push({ name: "cover_material", ok: true, message: "Permanent image material upload is available.", mediaId: cover.mediaId });
+  } catch (error) {
+    checks.push({ name: "cover_material", ok: false, message: error.message });
+  }
+
+  res.json({
+    ok: checks.every((item) => item.ok),
+    platform: "wechat",
+    checks
   });
 });
 

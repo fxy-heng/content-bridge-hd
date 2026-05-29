@@ -290,5 +290,21 @@ const crcTable = Array.from({ length: 256 }, (_, index) => {
 function formatWechatError(prefix, data = {}) {
   const code = data.errcode ?? "unknown";
   const message = data.errmsg || JSON.stringify(data);
-  return `WeChat ${prefix}: [${code}] ${message}`;
+  return `WeChat ${prefix}: [${code}] ${message}${wechatHint(code, prefix)}`;
+}
+
+function wechatHint(code, prefix) {
+  if (String(code) !== "48001") {
+    return "";
+  }
+  if (prefix.includes("cover upload")) {
+    return "。处理建议：当前公众号没有“素材管理/新增永久素材”接口权限。请在微信公众平台检查 设置与开发 -> 接口权限；通常需要已认证公众号，并开通素材管理、草稿箱/发布相关接口。";
+  }
+  if (prefix.includes("draft")) {
+    return "。处理建议：当前公众号没有“草稿箱”接口权限。请在微信公众平台检查 设置与开发 -> 接口权限，确认账号类型和认证状态支持草稿接口。";
+  }
+  if (prefix.includes("publish")) {
+    return "。处理建议：当前公众号没有“发布”接口权限。请检查公众号认证状态和接口权限。";
+  }
+  return "。处理建议：当前公众号未获得该微信 API 权限，请在微信公众平台的接口权限页面确认。";
 }
