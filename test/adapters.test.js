@@ -12,6 +12,7 @@ import { parseMarkdownDraft } from "../src/core/markdown.js";
 import { exportPlatformPreset, importPlatformPreset } from "../src/core/platform-presets.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "../src/core/reports.js";
+import { buildPlatformRulesMarkdown } from "../src/core/rules.js";
 import { createSnapshot, findSnapshot } from "../src/core/snapshots.js";
 import { buildPublishingStrategy } from "../src/core/strategy.js";
 import { contentTemplates, getTemplate } from "../src/core/templates.js";
@@ -208,6 +209,14 @@ test("exports and imports custom platform presets", () => {
   assert.equal(preset.version, 1);
   assert.equal(imported.length, 1);
   assert.equal(imported[0].key, "douyin");
+});
+
+test("exports platform rules as markdown", () => {
+  const markdown = buildPlatformRulesMarkdown(customPlatforms);
+
+  assert.ok(markdown.includes("ContentBridge 平台规则说明"));
+  assert.ok(markdown.includes("公众号"));
+  assert.ok(markdown.includes("抖音"));
 });
 
 test("simulated publisher returns publish results", async () => {

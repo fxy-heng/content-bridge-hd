@@ -11,6 +11,7 @@ import { parseMarkdownDraft } from "./core/markdown.js";
 import { exportPlatformPreset, importPlatformPreset } from "./core/platform-presets.js";
 import { publishToPlatforms } from "./core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "./core/reports.js";
+import { buildPlatformRulesMarkdown } from "./core/rules.js";
 import { createSnapshot, findSnapshot } from "./core/snapshots.js";
 import { buildPublishingStrategy } from "./core/strategy.js";
 import { contentTemplates, getTemplate } from "./core/templates.js";
@@ -72,6 +73,7 @@ const elements = {
   addPlatform: document.querySelector("#addPlatform"),
   exportPlatforms: document.querySelector("#exportPlatforms"),
   importPlatforms: document.querySelector("#importPlatforms"),
+  exportRules: document.querySelector("#exportRules"),
   platformPresetFile: document.querySelector("#platformPresetFile"),
   resetPlatforms: document.querySelector("#resetPlatforms"),
   customKey: document.querySelector("#customKey"),
@@ -109,6 +111,7 @@ elements.addPlatform.addEventListener("click", addCustomPlatform);
 elements.exportPlatforms.addEventListener("click", exportCustomPlatforms);
 elements.importPlatforms.addEventListener("click", () => elements.platformPresetFile.click());
 elements.platformPresetFile.addEventListener("change", importCustomPlatforms);
+elements.exportRules.addEventListener("click", exportPlatformRules);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
 
 sourceInputs().forEach((input) => {
@@ -400,6 +403,11 @@ function exportCustomPlatforms() {
     "application/json"
   );
   elements.summaryText.textContent = "平台预设已导出";
+}
+
+function exportPlatformRules() {
+  downloadText("content-bridge-platform-rules.md", buildPlatformRulesMarkdown(state.customPlatforms), "text/markdown");
+  elements.summaryText.textContent = "平台规则说明已导出";
 }
 
 async function importCustomPlatforms(event) {
