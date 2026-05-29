@@ -21,9 +21,11 @@ const requiredFiles = [
   "backend/server.js",
   "backend/routes/wechat.js",
   "backend/routes/bilibili.js",
+  "backend/routes/rednote.js",
   "backend/routes/credentials.js",
   "backend/services/wechat-api.js",
   "backend/services/bilibili-browser.js",
+  "backend/services/rednote-browser.js",
   "backend/storage/credentials-store.js",
   "docs/architecture.md",
   "docs/demo-script.md",
@@ -46,6 +48,7 @@ assertIncludes(html, "readinessGrid", "readiness dashboard");
 assertIncludes(html, "templateSelect", "template selector");
 assertIncludes(html, "wechatThumbMediaId", "WeChat thumb media field");
 assertIncludes(html, "openBilibiliLogin", "Bilibili login button");
+assertIncludes(html, "openRednoteLogin", "RedNote login button");
 assertIncludes(html, "publishResults", "publish result panel");
 assertIncludes(app, "adaptForPlatforms", "adapter workflow");
 assertIncludes(app, "buildPublishingStrategy", "strategy workflow");
@@ -56,6 +59,7 @@ assertIncludes(app, "createSnapshot", "snapshot workflow");
 assertIncludes(app, "exportPlatformPreset", "platform preset workflow");
 assertIncludes(app, "buildPlatformRulesMarkdown", "platform rules export workflow");
 assertIncludes(app, "openBilibiliLogin", "Bilibili login workflow");
+assertIncludes(app, "openRednoteLogin", "RedNote login workflow");
 assertIncludes(app, "mode === \"real\"", "real publish log marker");
 assertIncludes(app, "renderPublishResults", "visible publish result workflow");
 assertIncludes(readme, "npm start", "startup command");

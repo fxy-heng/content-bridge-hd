@@ -94,7 +94,10 @@ const elements = {
   removeWechatCreds: document.querySelector("#removeWechatCreds"),
   bilibiliStatus: document.querySelector("#bilibiliStatus"),
   openBilibiliLogin: document.querySelector("#openBilibiliLogin"),
-  refreshBilibiliStatus: document.querySelector("#refreshBilibiliStatus")
+  refreshBilibiliStatus: document.querySelector("#refreshBilibiliStatus"),
+  rednoteStatus: document.querySelector("#rednoteStatus"),
+  openRednoteLogin: document.querySelector("#openRednoteLogin"),
+  refreshRednoteStatus: document.querySelector("#refreshRednoteStatus")
 };
 
 elements.adaptButton.addEventListener("click", adaptCurrentContent);
@@ -128,6 +131,8 @@ elements.saveWechatCreds.addEventListener("click", saveWechatCredentials);
 elements.removeWechatCreds.addEventListener("click", removeWechatCredentials);
 elements.openBilibiliLogin.addEventListener("click", openBilibiliLogin);
 elements.refreshBilibiliStatus.addEventListener("click", refreshBilibiliStatus);
+elements.openRednoteLogin.addEventListener("click", openRednoteLogin);
+elements.refreshRednoteStatus.addEventListener("click", refreshRednoteStatus);
 
 sourceInputs().forEach((input) => {
   input.addEventListener("input", debounce(() => {
@@ -846,6 +851,32 @@ async function refreshBilibiliStatus() {
   }
 }
 
+async function openRednoteLogin() {
+  setRednoteStatus("disconnected", "正在打开小红书登录窗口...");
+  try {
+    const response = await fetch("/api/rednote/login", { method: "POST" });
+    const data = await response.json();
+    if (data.ok) {
+      setRednoteStatus("connected", "请在打开的浏览器窗口登录，然后刷新状态");
+    } else {
+      setRednoteStatus("disconnected", data.error || "登录窗口打开失败");
+    }
+  } catch (err) {
+    setRednoteStatus("disconnected", `后端连接失败: ${err.message}`);
+  }
+}
+
+async function refreshRednoteStatus() {
+  setRednoteStatus("disconnected", "正在检测登录态...");
+  try {
+    const response = await fetch("/api/rednote/status");
+    const data = await response.json();
+    setRednoteStatus(data.connected ? "connected" : "disconnected", data.connected ? "已登录，可尝试真实发布" : "未登录或登录已失效");
+  } catch (err) {
+    setRednoteStatus("disconnected", `检测失败: ${err.message}`);
+  }
+}
+
 function setWechatStatus(className, message) {
   elements.wechatStatus.className = `account-status ${className}`;
   elements.wechatStatus.textContent = message;
@@ -854,6 +885,11 @@ function setWechatStatus(className, message) {
 function setBilibiliStatus(className, message) {
   elements.bilibiliStatus.className = `account-status ${className}`;
   elements.bilibiliStatus.textContent = message;
+}
+
+function setRednoteStatus(className, message) {
+  elements.rednoteStatus.className = `account-status ${className}`;
+  elements.rednoteStatus.textContent = message;
 }
 
 function loadJson(key, fallback) {

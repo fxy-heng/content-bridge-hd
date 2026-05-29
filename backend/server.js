@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import credentialsRouter from "./routes/credentials.js";
 import wechatRouter from "./routes/wechat.js";
 import bilibiliRouter from "./routes/bilibili.js";
+import rednoteRouter from "./routes/rednote.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const root = join(__dirname, "..");
@@ -21,13 +22,14 @@ export function createApp() {
       ok: true,
       name: "ContentBridge backend",
       version: "0.2.0",
-      realPublish: ["wechat", "bilibili"]
+      realPublish: ["wechat", "bilibili", "rednote"]
     });
   });
 
   app.use("/api/credentials", credentialsRouter);
   app.use("/api/wechat", wechatRouter);
   app.use("/api/bilibili", bilibiliRouter);
+  app.use("/api/rednote", rednoteRouter);
 
   app.use(express.static(root, {
     extensions: ["html"],

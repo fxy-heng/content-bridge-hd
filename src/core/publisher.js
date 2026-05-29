@@ -21,10 +21,11 @@ async function getBackendState() {
         .map((item) => item.platform)
     );
 
-    // Bilibili uses a persisted browser profile rather than static credentials.
+    // Browser-automated platforms use persisted browser profiles rather than static credentials.
     // When the backend is running, the real publish path can report login_required
     // and open the QR-login flow instead of silently pretending a publish worked.
     realPlatforms.add("bilibili");
+    realPlatforms.add("rednote");
 
     const value = { available: true, realPlatforms, credentials };
     backendCache = { value, expiresAt: Date.now() + 5000 };
@@ -79,11 +80,16 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
 }
 
 function supportsRealPublish(platform) {
-  return platform === "wechat" || platform === "bilibili";
+  return platform === "wechat" || platform === "bilibili" || platform === "rednote";
 }
 
 async function realPublish(item) {
-  const endpoint = item.platform === "wechat" ? "/api/wechat/publish" : "/api/bilibili/publish";
+  const endpoints = {
+    wechat: "/api/wechat/publish",
+    bilibili: "/api/bilibili/publish",
+    rednote: "/api/rednote/publish"
+  };
+  const endpoint = endpoints[item.platform];
 
   const response = await fetch(endpoint, {
     method: "POST",
