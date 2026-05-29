@@ -45,6 +45,9 @@ npm run smoke
 ## Git 提交概览
 
 ```text
+3762311 feat: export publishing schedule calendar
+33f20fb feat: add pwa offline support
+5e7a1a8 docs: add project handoff snapshot
 dde6543 docs: add publish api contract and workspace sample
 bde40b7 chore: add ci smoke checks and contributor docs
 4a60c8b docs: explain templates and strategy guidance
