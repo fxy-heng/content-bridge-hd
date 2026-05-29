@@ -46,6 +46,8 @@ npm run smoke
 ## Git 提交概览
 
 ```text
+ccb6b8b feat: export readiness and publish reports
+33d31c0 docs: refresh handoff commit list
 3762311 feat: export publishing schedule calendar
 33f20fb feat: add pwa offline support
 5e7a1a8 docs: add project handoff snapshot
