@@ -116,7 +116,7 @@ npm run smoke
 | 贡献者 | GitHub | 角色 |
 |--------|--------|------|
 | [fxy-heng](https://github.com/fxy-heng) | [@fxy-heng](https://github.com/fxy-heng) | 项目负责人 / 开发 |
-| 2287374549 | [@2287374549](https://github.com/2287374549) | — |
+| 2287374549 | [@2287374549](https://github.com/2287374549) | 计划安排 |
 
 ## Demo 视频
 
