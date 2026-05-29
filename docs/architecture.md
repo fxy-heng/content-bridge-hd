@@ -34,13 +34,15 @@ type AdaptedContent = {
 };
 ```
 
-## 3. 平台适配器
+## 3. 平台适配器与注册表
 
-平台差异通过 `platformMeta` 和 `adapters` 注册。
+平台差异通过 `platformMeta`、内置适配器和自定义平台注册表管理。
 
 - `platformMeta` 描述平台名称、标题限制、标签限制、正文建议长度和发布类型。
-- `adapters[platform]` 负责把统一内容转换为平台版本。
+- `builtInAdapters[platform]` 负责把统一内容转换为内置平台版本。
+- `getPlatformRegistry(customPlatforms)` 合并内置平台和用户自定义平台。
 - `validateAdaptedContent` 统一生成错误和警告。
+- 自定义平台使用通用适配器 `adaptGenericPlatform`，并继承统一校验、导出和模拟发布流程。
 
 新增平台时的步骤：
 
@@ -49,6 +51,8 @@ type AdaptedContent = {
 3. 在 `adapters` 中实现平台改写规则。
 4. 为新平台补充单元测试。
 5. 更新 README 中的支持平台说明。
+
+如果只是希望快速演示扩展能力，也可以直接在 UI 的“扩展更多平台”面板中添加平台，无需修改代码。
 
 ## 4. 模拟发布器
 
@@ -80,3 +84,17 @@ type AdaptedContent = {
 - 支持团队协作、审核流和定时任务。
 - 增加更多平台，例如抖音、快手、微博、今日头条。
 
+## 7. AI 提示词包设计
+
+当前版本不绑定具体大模型供应商，而是为每个平台生成结构化提示词，包含：
+
+- 平台名称
+- 平台风格
+- 发布类型
+- 标题和标签限制
+- 目标受众
+- 品牌语气
+- 行动引导
+- 原始正文
+
+这种设计避免 API Key、费用和网络环境成为演示阻塞点，同时保留后续接入真实 AI 服务的接口边界。
