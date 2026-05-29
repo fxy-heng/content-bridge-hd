@@ -25,6 +25,8 @@
 
 - 核心逻辑：`src/core/adapters.js`、`src/core/publisher.js`
 - 测试：`test/adapters.test.js`
+- 烟测：`scripts/smoke.js`
+- CI：`.github/workflows/ci.yml`
 - 本地验证：`npm run check`、`npm test`
 - PR 模板：`.github/pull_request_template.md`
 - PR 草案：`docs/pr-records.md`
