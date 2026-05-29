@@ -365,7 +365,7 @@ async function publishAndVerify(page, diagnostics) {
     });
     diagnostics.push(confirmResult.clicked ? `confirm_clicked_attempt_${attempt}=${confirmResult.text || "unknown"}` : `confirm_not_required_attempt_${attempt}`);
 
-    const verified = await waitForPublishSuccessSignal(page, diagnostics, 6_000);
+    const verified = await waitForPublishSuccessSignal(page, diagnostics, 15_000);
     if (verified) {
       return { status: "success" };
     }
@@ -610,13 +610,93 @@ async function clickElementByText(page, labels, options = {}) {
       });
       const target = candidates[0];
       target.element.scrollIntoView({ block: "center", inline: "center" });
-      target.element.click();
       return {
-        clicked: true,
+        clicked: false,
+        found: true,
         text: target.text,
         top: Math.round(target.rect.top)
       };
     }, { buttonLabels: labels, ...options });
+
+    if (lastResult.found) {
+      await sleep(150);
+      const point = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false }) => {
+        const selectorText = (selectors || [
+          "button",
+          "[role='button']",
+          ".btn",
+          "[class*='button']",
+          "a",
+          "div",
+          "span",
+          "li"
+        ]).join(",");
+
+        const candidates = Array.from(document.querySelectorAll(selectorText))
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const text = (element.textContent || "").replace(/\s+/g, "");
+            const className = String(element.className || "");
+            const disabled = (
+              element.disabled === true ||
+              element.getAttribute("aria-disabled") === "true" ||
+              element.getAttribute("disabled") !== null ||
+              /disabled|disable|forbid|inactive/i.test(className) ||
+              style.pointerEvents === "none" ||
+              Number(style.opacity) < 0.45
+            );
+            return { element, rect, text, disabled };
+          })
+          .filter(({ rect, text, disabled }) => (
+            text &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.top >= 0 &&
+            rect.top >= minY &&
+            rect.top <= maxY &&
+            (!skipDisabled || !disabled) &&
+            buttonLabels.some((label) => text === label || text.includes(label))
+          ));
+
+        if (!candidates.length) return null;
+        candidates.sort((a, b) => {
+          const exactA = buttonLabels.includes(a.text) ? 0 : 1;
+          const exactB = buttonLabels.includes(b.text) ? 0 : 1;
+          if (exactA !== exactB) return exactA - exactB;
+          if (preferShortest && a.text.length !== b.text.length) {
+            return a.text.length - b.text.length;
+          }
+          return b.rect.top - a.rect.top;
+        });
+
+        const target = candidates[0];
+        const rect = target.rect;
+        return {
+          text: target.text,
+          x: Math.round(rect.left + rect.width / 2),
+          y: Math.round(rect.top + rect.height / 2),
+          top: Math.round(rect.top)
+        };
+      }, { buttonLabels: labels, ...options });
+
+      if (!point) {
+        lastResult = { clicked: false, reason: "target_lost_after_scroll" };
+      } else {
+        await page.mouse.move(point.x, point.y);
+        await sleep(80);
+        await page.mouse.down();
+        await sleep(80);
+        await page.mouse.up();
+        return {
+          clicked: true,
+          text: point.text,
+          top: point.top,
+          x: point.x,
+          y: point.y
+        };
+      }
+    }
 
     if (lastResult.clicked || timeout <= 0) {
       return lastResult;
