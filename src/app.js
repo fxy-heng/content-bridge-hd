@@ -205,6 +205,28 @@ function adaptCurrentContent() {
   renderPreviews();
   renderReadiness();
   renderStrategy();
+  updateWorkflow();
+}
+
+function updateWorkflow() {
+  const source = readSourceContent();
+  const hasContent = Boolean(source.title || source.body);
+  const hasAdapted = state.adapted.length > 0;
+  const hasQuality = hasAdapted;
+  const hasReadiness = hasAdapted;
+
+  setWorkflowStep("input", hasContent);
+  setWorkflowStep("adapt", hasAdapted);
+  setWorkflowStep("preview", hasAdapted);
+  setWorkflowStep("quality", hasQuality);
+  setWorkflowStep("publish", hasReadiness);
+}
+
+function setWorkflowStep(step, active) {
+  const el = document.querySelector(`.wf-step[data-step="${step}"]`);
+  if (el) {
+    el.classList.toggle("done", active);
+  }
 }
 
 async function publishCurrentContent() {
@@ -499,6 +521,7 @@ function renderPreviews() {
   state.adapted.forEach((item) => {
     const card = document.createElement("article");
     card.className = "preview-card";
+    card.setAttribute("data-platform", item.platform);
     card.innerHTML = `
       <div class="card-head">
         <div>
@@ -563,7 +586,7 @@ function renderReadiness() {
         ? item.validation.issues.map((issue) => issue.message).join("；")
         : "校验通过";
       return `
-        <article class="readiness-card ${status}">
+        <article class="readiness-card ${status}" data-platform="${escapeHtml(item.platform)}">
           <div>
             <strong>${escapeHtml(item.displayName)}</strong>
             <span>${label}</span>
