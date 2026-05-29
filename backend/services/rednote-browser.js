@@ -346,7 +346,7 @@ async function publishAndVerify(page, diagnostics) {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await revealPublishControls(page);
-    const clickResult = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"], 18_000);
+    const clickResult = await clickButtonByText(page, ["立即发布", "发布", "提交"], 18_000);
     if (!clickResult.clicked) {
       diagnostics.push(`publish_button_missing_attempt_${attempt}=${clickResult.reason || "not_found"}`);
       break;
@@ -372,7 +372,8 @@ async function publishAndVerify(page, diagnostics) {
 
     const stillHasPublish = await hasClickableText(page, ["立即发布", "发布", "提交"], {
       minY: 220,
-      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"]
+      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"],
+      exactOnly: true
     });
     diagnostics.push(stillHasPublish ? `publish_button_still_visible_attempt_${attempt}` : `publish_button_not_visible_attempt_${attempt}`);
     if (!stillHasPublish) {
@@ -506,7 +507,7 @@ async function waitForPublishSuccessSignal(page, diagnostics, timeout = 12_000) 
 }
 
 async function hasClickableText(page, labels, options = {}) {
-  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, selectors }) => {
+  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, selectors, exactOnly = false }) => {
     const selectorText = (selectors || ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"]).join(",");
     return Array.from(document.querySelectorAll(selectorText)).some((element) => {
       const rect = element.getBoundingClientRect();
@@ -528,7 +529,7 @@ async function hasClickableText(page, labels, options = {}) {
         rect.height > 0 &&
         rect.top >= minY &&
         rect.top <= maxY &&
-        buttonLabels.some((label) => text === label || text.includes(label))
+        buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
       );
     });
   }, { buttonLabels: labels, ...options }).catch(() => false);
@@ -549,6 +550,7 @@ async function clickButtonByText(page, labels, timeout = 0) {
       "span"
     ],
     skipDisabled: true,
+    exactOnly: true,
     timeout
   });
 }
@@ -559,7 +561,7 @@ async function clickElementByText(page, labels, options = {}) {
   let lastResult = { clicked: false, reason: "not_found" };
 
   do {
-    lastResult = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false }) => {
+    lastResult = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false, exactOnly = false }) => {
       const selectorText = (selectors || [
         "button",
         "[role='button']",
@@ -595,7 +597,7 @@ async function clickElementByText(page, labels, options = {}) {
           rect.top >= minY &&
           rect.top <= maxY &&
           (!skipDisabled || !disabled) &&
-          buttonLabels.some((label) => text === label || text.includes(label))
+          buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
         ));
 
       if (!candidates.length) return { clicked: false, reason: "not_found" };
@@ -620,7 +622,7 @@ async function clickElementByText(page, labels, options = {}) {
 
     if (lastResult.found) {
       await sleep(150);
-      const point = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false }) => {
+      const point = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false, exactOnly = false }) => {
         const selectorText = (selectors || [
           "button",
           "[role='button']",
@@ -656,7 +658,7 @@ async function clickElementByText(page, labels, options = {}) {
             rect.top >= minY &&
             rect.top <= maxY &&
             (!skipDisabled || !disabled) &&
-            buttonLabels.some((label) => text === label || text.includes(label))
+            buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
           ));
 
         if (!candidates.length) return null;
