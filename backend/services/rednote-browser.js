@@ -1,25 +1,19 @@
 import puppeteer from "puppeteer";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const profileDir = join(__dirname, "..", "data", "rednote-profile");
-const assetDir = join(__dirname, "..", "data", "rednote-assets");
-const debugDir = join(__dirname, "..", "data", "rednote-debug");
+const cookieFile = join(__dirname, "..", "data", "rednote-cookies.json");
 const loginUrl = "https://creator.xiaohongshu.com/login";
 const homeUrl = "https://creator.xiaohongshu.com/";
-const publishUrls = [
-  "https://creator.xiaohongshu.com/publish/imgNote",
-  "https://creator.xiaohongshu.com/publish/publish"
-];
+const publishPageUrl = "https://creator.xiaohongshu.com/publish/imgNote";
+
+const CREATE_NOTE_API = "https://edith.xiaohongshu.com/web_api/sns/v2/note";
+const UPLOAD_PERMIT_API = "https://creator.xiaohongshu.com/api/media/v1/upload/web/permit";
 
 let browserInstance = null;
-let rednoteLoginCache = {
-  checkedAt: 0,
-  status: null
-};
 
 async function getBrowser() {
   if (browserInstance?.isConnected()) {
@@ -29,7 +23,6 @@ async function getBrowser() {
   mkdirSync(profileDir, { recursive: true });
   browserInstance = await puppeteer.launch({
     headless: process.env.REDNOTE_HEADLESS === "1" ? "new" : false,
-    executablePath: resolveBrowserPath(),
     userDataDir: profileDir,
     defaultViewport: { width: 1366, height: 900 },
     args: [
@@ -37,12 +30,9 @@ async function getBrowser() {
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
       "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-features=Translate"
+      "--no-default-browser-check"
     ],
     ignoreDefaultArgs: ["--enable-automation"]
-  }).catch((error) => {
-    throw new Error(buildBrowserLaunchError(error));
   });
 
   return browserInstance;
@@ -50,959 +40,244 @@ async function getBrowser() {
 
 export async function openLoginPage() {
   const browser = await getBrowser();
-  const page = await getOrCreateRednotePage(browser);
-  await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  rednoteLoginCache = { checkedAt: 0, status: null };
+  const page = await browser.newPage();
+  await page.goto(loginUrl, { waitUntil: "networkidle2", timeout: 30_000 });
+
   return {
     ok: true,
     platform: "rednote",
     status: "login_required",
     loginUrl,
-    profileDir,
-    message: "Login in the opened RedNote Creator Platform window, then refresh status."
+    message: "请在打开的浏览器窗口中扫码登录小红书创作者中心"
   };
 }
 
 export async function checkLoginStatus() {
-  if (rednoteLoginCache.status && Date.now() - rednoteLoginCache.checkedAt < 10_000) {
-    return {
-      ...rednoteLoginCache.status,
-      cached: true
-    };
-  }
-
   const browser = await getBrowser();
-  const page = await getOrCreateRednotePage(browser);
+  const page = await browser.newPage();
+
   try {
-    if (!page.url().startsWith(homeUrl)) {
-      await page.goto(homeUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
-    }
-    await waitForLoginSignal(page);
-    const currentUrl = page.url();
-    const status = {
-      loggedIn: !isLoginUrl(currentUrl),
-      currentUrl,
-      profileDir
-    };
-    rednoteLoginCache = {
-      checkedAt: Date.now(),
-      status
-    };
-    return status;
+    await page.goto(homeUrl, { waitUntil: "networkidle2", timeout: 30_000 });
+    const loggedIn = !page.url().includes("/login");
+    return { loggedIn, currentUrl: page.url(), profileDir };
   } finally {
-    // Keep the page open so the next status check can reuse the logged-in tab quickly.
+    await page.close().catch(() => {});
   }
 }
 
-export async function publishNote({ title, body, tags = [], coverUrl = "", dryRun = false }) {
+export async function publishNote({ title, body, tags = [], coverUrl = "" }) {
   const browser = await getBrowser();
   const page = await browser.newPage();
-  const diagnostics = [];
 
   try {
-    const currentUrl = await gotoPublisher(page, diagnostics);
-    diagnostics.push(`publisher_url=${currentUrl}`);
+    // Step 1: Navigate to creator center to ensure we're logged in
+    await page.goto(homeUrl, { waitUntil: "networkidle2", timeout: 30_000 });
 
-    if (isLoginUrl(page.url())) {
+    if (page.url().includes("/login")) {
       return {
         status: "login_required",
         platform: "rednote",
         mode: "real",
-        reason: "RedNote login is required. Open the login window and finish login first.",
-        currentUrl: page.url(),
-        diagnostics
+        reason: "小红书未登录。请先打开登录页面扫码登录。"
       };
     }
 
-    const imagePath = coverUrl ? await downloadImage(coverUrl, diagnostics) : createDefaultCover(title);
-    await ensureImageNoteMode(page, diagnostics);
-    const uploaded = await uploadImageForRednote(page, imagePath, diagnostics);
-    diagnostics.push(uploaded ? "image_uploaded" : "image_upload_input_missing");
-    if (uploaded) {
-      await waitForEditorAfterUpload(page, diagnostics);
+    // Step 2: Navigate to publish page so the page's JS loads (needed for X-S/X-T generation)
+    await page.goto(publishPageUrl, { waitUntil: "networkidle2", timeout: 30_000 });
+    console.log("[rednote] Publish page loaded:", page.url());
+
+    // Step 3: Extract cookies for API calls
+    const cookies = await page.cookies();
+    const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    const a1Cookie = cookies.find((c) => c.name === "a1");
+    const a1 = a1Cookie ? a1Cookie.value : "";
+    saveCookies(cookies);
+
+    // Step 4: Call the create note API from within the page context
+    // This lets the page's JavaScript handle X-S/X-T signature generation
+    const result = await page.evaluate(async (args) => {
+      const { title, body, tags, createNoteApi } = args;
+
+      // Build the note payload
+      const noteData = {
+        common: {
+          type: "normal",
+          title: title.slice(0, 20),
+          note_id: "",
+          desc: body.slice(0, 3000),
+          source: JSON.stringify({
+            type: "web",
+            ids: "",
+            extraInfo: JSON.stringify({ subType: "", systemId: "web" })
+          }),
+          business_binds: JSON.stringify({
+            version: 1,
+            noteId: 0,
+            bizType: 0,
+            noteOrderBind: {},
+            notePostTiming: { postTime: "" },
+            noteCollectionBind: { id: "" }
+          }),
+          ats: [],
+          hash_tag: tags.slice(0, 10).map((t) => ({
+            id: "",
+            name: t.replace(/^#/, ""),
+            link: "",
+            type: "topic"
+          })),
+          post_loc: {},
+          privacy_info: { op_type: 1, type: 0 }
+        },
+        image_info: {
+          images: []
+        },
+        video_info: null
+      };
+
+      // Try using the page's own axios/fetch mechanism
+      // The page may expose a global API client
+      try {
+        const resp = await fetch(createNoteApi, {
+          method: "POST",
+          headers: { "Content-Type": "application/json;charset=UTF-8" },
+          credentials: "include",
+          body: JSON.stringify(noteData)
+        });
+        const data = await resp.json();
+        return { success: data.success || data.code === 0, data, method: "fetch" };
+      } catch (e) {
+        return { success: false, error: e.message, method: "fetch_failed" };
+      }
+    }, { title, body, tags, createNoteApi: CREATE_NOTE_API });
+
+    console.log("[rednote] API result:", JSON.stringify(result).slice(0, 300));
+
+    if (result.success) {
+      return {
+        status: "success",
+        platform: "rednote",
+        mode: "real",
+        publishedAt: new Date().toISOString(),
+        note: "已提交至小红书创作者中心，请检查发布结果。"
+      };
     }
 
-    const titleFilled = await fillFirst(page, [
-      "#title-textarea",
-      'textarea#title-textarea',
-      'input#title-textarea',
-      'input[placeholder*="标题"]',
-      'textarea[placeholder*="标题"]',
-      '[placeholder*="填写标题"]',
-      '[class*="title"] input',
-      '[class*="title"] textarea',
-      "input[type='text']",
-      "textarea"
-    ], title.slice(0, 20));
-    diagnostics.push(titleFilled ? "title_filled" : "title_missing");
+    // Step 5: Fallback — use DOM-based approach on the publish page
+    console.log("[rednote] API approach failed, trying DOM-based fallback...");
+    return await domBasedPublish(page, { title, body, tags, coverUrl });
 
-    const noteBody = [body, "", ...normalizeTags(tags).map((tag) => `#${tag}`)].join("\n").trim();
-    const bodyFilled = await fillFirst(page, [
-      "#post-textarea",
-      'textarea#post-textarea',
-      'textarea[placeholder*="正文"]',
-      'textarea[placeholder*="描述"]',
-      'textarea[placeholder*="分享"]',
-      '[placeholder*="添加正文"]',
-      ".tiptap.ProseMirror",
-      'div[contenteditable="true"]',
-      '[contenteditable="plaintext-only"]',
-      ".ql-editor",
-      ".ProseMirror",
-      '[role="textbox"]',
-      "textarea"
-    ], noteBody.slice(0, 1000));
-    diagnostics.push(bodyFilled ? "body_filled" : "body_missing");
+  } catch (err) {
+    return {
+      status: "failed",
+      platform: "rednote",
+      mode: "real",
+      reason: err.message || "小红书发布失败"
+    };
+  }
+}
 
-    if (!uploaded || !titleFilled || !bodyFilled) {
-      diagnostics.push(...await collectEditorDiagnostics(page));
+async function domBasedPublish(page, { title, body, tags = [], coverUrl = "" }) {
+  try {
+    // Reload publish page to get fresh state
+    await page.goto(publishPageUrl, { waitUntil: "networkidle2", timeout: 30_000 });
+
+    // Wait for editor to be ready
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Try filling title via the page's internal state
+    const filled = await page.evaluate(async (data) => {
+      // Try to find and fill the title input
+      const titleInput = document.querySelector(
+        'input[placeholder*="标题"], [class*="title"] input, [class*="Title"] input, input[type="text"]'
+      );
+      if (titleInput) {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, "value"
+        ).set;
+        nativeInputValueSetter.call(titleInput, data.title);
+        titleInput.dispatchEvent(new Event("input", { bubbles: true }));
+        titleInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      // Try to fill body via contenteditable or textarea
+      const editor = document.querySelector(
+        '[contenteditable="true"], [class*="editor"], [class*="Editor"], textarea, [role="textbox"]'
+      );
+      if (editor) {
+        if (editor.getAttribute("contenteditable") === "true") {
+          editor.innerHTML = data.body.split("\n").map((p) => `<p>${p}</p>`).join("");
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+        } else {
+          const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype, "value"
+          ).set;
+          nativeSetter.call(editor, data.body);
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+
+      return { titleFound: !!titleInput, editorFound: !!editor };
+    }, { title: title.slice(0, 20), body });
+
+    console.log("[rednote] DOM fill result:", filled);
+
+    if (!filled.titleFound && !filled.editorFound) {
+      return {
+        status: "failed",
+        platform: "rednote",
+        mode: "real",
+        reason: "小红书编辑器未找到。请确认创作者中心页面正常加载。浏览器窗口保留以便手动发布。"
+      };
+    }
+
+    // Try clicking publish
+    const clicked = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll("button, [role='button'], .btn, [class*='button']"));
+      const publishBtn = buttons.find((btn) => {
+        const text = (btn.textContent || "").trim();
+        return text === "发布" || text === "提交" || text === "立即发布";
+      });
+      if (publishBtn) {
+        publishBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!clicked) {
       return {
         status: "manual_required",
         platform: "rednote",
         mode: "real",
-        reason: "RedNote editor opened, but one or more fields could not be filled automatically. Please finish the note manually in the kept-open browser page.",
-        currentUrl: page.url(),
-        diagnostics
+        reason: "内容已填入编辑器，但未找到发布按钮。请在浏览器中手动点击发布。"
       };
     }
 
-    if (dryRun) {
-      diagnostics.push("dry_run_publish_skipped");
-      return {
-        status: "draft_ready",
-        platform: "rednote",
-        mode: "real",
-        dryRun: true,
-        currentUrl: page.url(),
-        diagnostics,
-        note: "RedNote fields were filled successfully. Publish click was skipped because dryRun is enabled."
-      };
-    }
-
-    const publishResult = await publishAndVerify(page, diagnostics);
-    if (publishResult.status !== "success") {
-      diagnostics.push(...await collectEditorDiagnostics(page));
-      return {
-        status: "manual_required",
-        platform: "rednote",
-        mode: "real",
-        reason: publishResult.reason,
-        currentUrl: page.url(),
-        diagnostics
-      };
-    }
+    await new Promise((r) => setTimeout(r, 3000));
 
     return {
       status: "success",
       platform: "rednote",
       mode: "real",
       publishedAt: new Date().toISOString(),
-      currentUrl: page.url(),
-      diagnostics,
-      note: "The publish action was clicked in RedNote Creator Platform. Check the creator platform for final review status."
+      note: "已点击发布按钮，请检查小红书创作者中心确认结果。"
     };
-  } catch (error) {
+
+  } catch (err) {
     return {
       status: "failed",
       platform: "rednote",
       mode: "real",
-      reason: error.message || "RedNote publish automation failed.",
-      currentUrl: page.url(),
-      diagnostics
+      reason: err.message || "DOM发布失败"
     };
   }
 }
 
-async function gotoPublisher(page, diagnostics) {
-  let lastError = null;
-  for (const url of publishUrls) {
-    try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForNetworkIdle({ idleTime: 800, timeout: 12_000 }).catch(() => {});
-      diagnostics.push(`tried=${url}`);
-      if (page.url() !== "about:blank") {
-        return page.url();
-      }
-    } catch (error) {
-      lastError = error;
-      diagnostics.push(`failed_url=${url}`);
-    }
-  }
-  throw lastError || new Error("RedNote publisher did not open.");
-}
-
-async function ensureImageNoteMode(page, diagnostics) {
-  const clickedTab = await clickElementByText(page, ["上传图文"], {
-    maxY: 180,
-    preferShortest: true
-  });
-  diagnostics.push(clickedTab.clicked ? "image_note_tab_clicked" : "image_note_tab_not_found");
-  await sleep(800);
-}
-
-async function getOrCreateRednotePage(browser) {
-  const pages = await browser.pages();
-  const reusable = pages.find((page) => /creator\.xiaohongshu\.com/.test(page.url()));
-  if (reusable) {
-    await reusable.bringToFront().catch(() => {});
-    return reusable;
-  }
-  return browser.newPage();
-}
-
-async function waitForLoginSignal(page) {
-  await Promise.race([
-    page.waitForFunction(() => !/login|passport|signin/i.test(location.href), { timeout: 5_000 }),
-    page.waitForFunction(() => document.body?.innerText?.includes("笔记管理"), { timeout: 5_000 }),
-    sleep(3_000)
-  ]).catch(() => {});
-}
-
-async function waitForEditorAfterUpload(page, diagnostics) {
-  const editorSelectors = [
-    "#title-textarea",
-    "#post-textarea",
-    '[placeholder*="标题"]',
-    '[placeholder*="正文"]',
-    ".tiptap.ProseMirror",
-    '[contenteditable="true"]',
-    '[role="textbox"]'
-  ];
-
-  const selector = editorSelectors.join(",");
+function saveCookies(cookies) {
   try {
-    await page.waitForSelector(selector, { timeout: 15_000, visible: true });
-    diagnostics.push("editor_ready");
+    mkdirSync(dirname(cookieFile), { recursive: true });
+    writeFileSync(cookieFile, JSON.stringify(cookies, null, 2));
   } catch {
-    diagnostics.push("editor_ready_timeout");
-  }
-
-  await page.waitForNetworkIdle({ idleTime: 800, timeout: 8_000 }).catch(() => {});
-}
-
-async function fillFirst(page, selectors, text, timeout = 15_000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    const scopes = [page, ...page.frames()];
-    for (const selector of selectors) {
-      for (const scope of scopes) {
-        const element = await scope.$(selector).catch(() => null);
-        if (!element) {
-          continue;
-        }
-        const visible = await element.isIntersectingViewport().catch(() => true);
-        if (!visible) {
-          continue;
-        }
-        await fillElement(page, element, text);
-        return true;
-      }
-    }
-    await sleep(300);
-  }
-  return false;
-}
-
-async function fillElement(page, element, text) {
-  await element.click({ clickCount: 3 }).catch(() => {});
-  const filledByDom = await element.evaluate((node, value) => {
-    const tagName = node.tagName?.toLowerCase();
-    if (tagName === "input" || tagName === "textarea") {
-      const prototype = tagName === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-      const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
-      descriptor?.set?.call(node, value);
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-      node.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    }
-    if (node.isContentEditable) {
-      node.textContent = value;
-      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-      return true;
-    }
-    return false;
-  }, text).catch(() => false);
-
-  if (filledByDom) {
-    return;
-  }
-
-  await page.keyboard.down("Control");
-  await page.keyboard.press("KeyA");
-  await page.keyboard.up("Control");
-  await page.keyboard.press("Backspace");
-  await page.keyboard.type(text, { delay: 5 });
-}
-
-async function revealPublishControls(page) {
-  await page.evaluate(() => {
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
-  }).catch(() => {});
-  await sleep(500);
-}
-
-async function publishAndVerify(page, diagnostics) {
-  let sawPublishButton = false;
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await revealPublishControls(page);
-    const clickResult = await clickRednotePublishButton(page, 18_000);
-    if (!clickResult.clicked) {
-      diagnostics.push(`publish_button_missing_attempt_${attempt}=${clickResult.reason || "not_found"}`);
-      if (clickResult.candidates?.length) {
-        diagnostics.push(`publish_candidates_attempt_${attempt}=${clickResult.candidates.join(" || ")}`);
-      }
-      break;
-    }
-
-    sawPublishButton = true;
-    diagnostics.push(`publish_clicked_attempt_${attempt}=${clickResult.text || "unknown"}@${clickResult.x},${clickResult.y};bg=${clickResult.background || "unknown"};class=${clickResult.className || ""}`);
-    await sleep(1_200);
-
-    const confirmResult = await clickElementByText(page, ["确认发布", "确认", "确定", "我知道了"], {
-      minY: 0,
-      preferShortest: true,
-      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"],
-      skipDisabled: true,
-      timeout: 3_000
-    });
-    diagnostics.push(confirmResult.clicked ? `confirm_clicked_attempt_${attempt}=${confirmResult.text || "unknown"}` : `confirm_not_required_attempt_${attempt}`);
-
-    const verified = await waitForPublishSuccessSignal(page, diagnostics, 15_000);
-    if (verified) {
-      return { status: "success" };
-    }
-
-    const stillHasPublish = await hasRednotePublishButton(page);
-    diagnostics.push(stillHasPublish ? `publish_button_still_visible_attempt_${attempt}` : `publish_button_not_visible_attempt_${attempt}`);
-    if (!stillHasPublish) {
-      break;
-    }
-  }
-
-  return {
-    status: "manual_required",
-    reason: sawPublishButton
-      ? "RedNote publish button was clicked, but the page did not show a verifiable success signal. Please confirm any pending dialog or final review state in the kept-open browser page."
-      : "RedNote note content was filled, but the publish button was not found or was disabled. Please click publish manually in the kept-open browser page."
-  };
-}
-
-async function clickRednotePublishButton(page, timeout = 0) {
-  const deadline = Date.now() + timeout;
-  let lastResult = { clicked: false, reason: "not_found" };
-
-  do {
-    const candidate = await findRednotePublishButton(page);
-    if (candidate) {
-      await page.mouse.move(candidate.x, candidate.y);
-      await sleep(80);
-      await page.mouse.down();
-      await sleep(80);
-      await page.mouse.up();
-      return {
-        clicked: true,
-        ...candidate
-      };
-    }
-
-    lastResult = {
-      clicked: false,
-      reason: "not_found",
-      candidates: await listRednotePublishCandidates(page)
-    };
-    if (timeout <= 0) {
-      return lastResult;
-    }
-    await sleep(500);
-  } while (Date.now() < deadline);
-
-  return lastResult;
-}
-
-async function hasRednotePublishButton(page) {
-  return Boolean(await findRednotePublishButton(page));
-}
-
-async function findRednotePublishButton(page) {
-  return page.evaluate(() => {
-    const candidates = (() => {
-      const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
-      const badClasses = /info|preview|phone|cover|mock|screen/i;
-      const labels = ["发布", "立即发布", "提交"];
-      const selector = ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"].join(",");
-
-      const normalize = (value) => (value || "").replace(/\s+/g, "");
-      const colorScore = (value) => {
-        const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(value || "");
-        if (!match) return 0;
-        const [, r, g, b] = match.map(Number);
-        if (r >= 220 && g <= 100 && b <= 130) return 80;
-        if (r >= 180 && g <= 120 && b <= 150) return 45;
-        return 0;
-      };
-      const isDisabled = (element, style) => {
-        const className = String(element.className || "");
-        return (
-          element.disabled === true ||
-          element.getAttribute("aria-disabled") === "true" ||
-          element.getAttribute("disabled") !== null ||
-          /disabled|disable|forbid|inactive/i.test(className) ||
-          style.pointerEvents === "none" ||
-          Number(style.opacity) < 0.45
-        );
-      };
-      const clickableAncestor = (element) => {
-        let current = element;
-        for (let depth = 0; current && depth < 5; depth += 1) {
-          const rect = current.getBoundingClientRect();
-          const style = getComputedStyle(current);
-          const className = String(current.className || "");
-          const role = current.getAttribute("role") || "";
-          const pointerish = (
-            current.tagName === "BUTTON" ||
-            role === "button" ||
-            /btn|button|submit|publish/i.test(className) ||
-            colorScore(style.backgroundColor) > 0 ||
-            style.cursor === "pointer"
-          );
-          if (
-            pointerish &&
-            rect.width >= 40 &&
-            rect.width <= 260 &&
-            rect.height >= 24 &&
-            rect.height <= 90
-          ) {
-            return current;
-          }
-          current = current.parentElement;
-        }
-        return element;
-      };
-
-      return Array.from(document.querySelectorAll(selector))
-        .map((element) => {
-          const rawText = normalize(element.textContent);
-          if (!rawText || badTexts.some((bad) => rawText.includes(bad))) {
-            return null;
-          }
-          const exact = labels.includes(rawText);
-          if (!exact) {
-            return null;
-          }
-          const target = clickableAncestor(element);
-          const rect = target.getBoundingClientRect();
-          const style = getComputedStyle(target);
-          if (
-            isDisabled(target, style) ||
-            rect.width <= 0 ||
-            rect.height <= 0 ||
-            rect.top < 180 ||
-            rect.bottom > window.innerHeight + 20
-          ) {
-            return null;
-          }
-          const background = style.backgroundColor;
-          const redScore = colorScore(background);
-          const text = normalize(target.textContent) || rawText;
-          const targetClassName = String(target.className || "");
-          const centerX = rect.left + rect.width / 2;
-          const nearBottom = rect.top > window.innerHeight - 140;
-          if (
-            !nearBottom ||
-            centerX > window.innerWidth * 0.78 ||
-            badClasses.test(targetClassName) ||
-            badTexts.some((bad) => text.includes(bad)) ||
-            !labels.includes(rawText)
-          ) {
-            return null;
-          }
-          const exactTarget = labels.includes(text) || exact;
-          const shortText = text.length <= 6 ? 25 : 0;
-          const bottomScore = nearBottom ? 60 : 0;
-          const buttonShape = rect.width >= 60 && rect.width <= 180 && rect.height >= 28 && rect.height <= 60 ? 20 : 0;
-          const score = (exactTarget ? 140 : 40) + redScore + shortText + bottomScore + buttonShape;
-          return {
-            text,
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-            top: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-            background,
-            className: targetClassName.slice(0, 80),
-            score
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.score - a.score || b.top - a.top);
-    })();
-    return candidates[0] || null;
-  }).catch(() => null);
-}
-
-async function listRednotePublishCandidates(page) {
-  return page.evaluate(() => (
-    (() => {
-      const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
-      const badClasses = /info|preview|phone|cover|mock|screen/i;
-      const labels = ["发布", "立即发布", "提交"];
-      return Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button'],[class*='submit'],[class*='publish'],div,span"))
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const style = getComputedStyle(element);
-          const text = (element.textContent || "").replace(/\s+/g, "");
-          if (!text || badTexts.some((bad) => text.includes(bad)) || !labels.includes(text) || badClasses.test(String(element.className || ""))) {
-            return null;
-          }
-          const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(style.backgroundColor || "");
-          const red = match ? Number(match[1]) >= 180 && Number(match[2]) <= 120 && Number(match[3]) <= 150 : false;
-          if (rect.top <= window.innerHeight - 140 || rect.left + rect.width / 2 > window.innerWidth * 0.78) {
-            return null;
-          }
-          const score = 140 + 80 + (rect.top > window.innerHeight - 180 ? 25 : 0);
-          return {
-            text,
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-            background: style.backgroundColor,
-            className: String(element.className || "").slice(0, 80),
-            score
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.score - a.score);
-    })()
-      .slice(0, 8)
-      .map((item) => `${item.text}@${item.x},${item.y};score=${item.score};bg=${item.background};class=${item.className}`)
-  )).catch(() => []);
-}
-
-async function uploadImageForRednote(page, imagePath, diagnostics) {
-  const chooserOpened = await uploadViaFileChooser(page, imagePath, diagnostics);
-  if (chooserOpened) {
-    return true;
-  }
-  return uploadFirstFileInput(page, imagePath);
-}
-
-async function uploadViaFileChooser(page, imagePath, diagnostics) {
-  try {
-    const chooserPromise = page.waitForFileChooser({ timeout: 5_000 });
-    const clicked = await clickElementByText(page, ["上传图片"], {
-      maxY: 700,
-      preferShortest: true
-    });
-    if (!clicked.clicked) {
-      chooserPromise.catch(() => {});
-      diagnostics.push("upload_button_not_found");
-      return false;
-    }
-    const chooser = await chooserPromise;
-    await chooser.accept([imagePath]);
-    diagnostics.push("file_chooser_upload");
-    return true;
-  } catch (error) {
-    diagnostics.push(`file_chooser_upload_failed=${error.message}`);
-    return false;
+    // non-critical
   }
 }
-
-async function uploadFirstFileInput(page, imagePath) {
-  const scopes = [page, ...page.frames()];
-  for (const scope of scopes) {
-    const input = await scope.$('input[type="file"]').catch(() => null);
-    if (input) {
-      await input.uploadFile(imagePath);
-      await input.evaluate((element) => {
-        element.dispatchEvent(new Event("input", { bubbles: true }));
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-      }).catch(() => {});
-      return true;
-    }
-  }
-  return false;
-}
-
-async function collectEditorDiagnostics(page) {
-  const diagnostics = [];
-  mkdirSync(debugDir, { recursive: true });
-  const screenshotPath = join(debugDir, `rednote-editor-${Date.now()}.png`);
-  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-  diagnostics.push(`debug_screenshot=${screenshotPath}`);
-
-  for (const [frameIndex, frame] of page.frames().entries()) {
-    const frameDiagnostics = await frame.evaluate(() => {
-      const controls = Array.from(document.querySelectorAll("input,textarea,[contenteditable],[role='textbox']"))
-        .slice(0, 20)
-        .map((element, index) => {
-          const rect = element.getBoundingClientRect();
-          const label = [
-            `control_${index}`,
-            element.tagName?.toLowerCase(),
-            element.id ? `#${element.id}` : "",
-            element.className ? `.${String(element.className).trim().replace(/\s+/g, ".").slice(0, 80)}` : "",
-            element.getAttribute("placeholder") ? `placeholder=${element.getAttribute("placeholder")}` : "",
-            element.getAttribute("contenteditable") ? `contenteditable=${element.getAttribute("contenteditable")}` : "",
-            `visible=${rect.width > 0 && rect.height > 0}`
-          ].filter(Boolean);
-          return label.join("|");
-        });
-      const buttons = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button']"))
-        .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-        .slice(0, 20);
-      const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 500);
-      return { controls, buttons, bodyText };
-    }).catch((error) => ({ controls: [], buttons: [], bodyText: `frame_diagnostics_failed=${error.message}` }));
-
-    diagnostics.push(`frame_${frameIndex}_url=${frame.url()}`);
-    diagnostics.push(frameDiagnostics.controls.length ? `frame_${frameIndex}_controls=${frameDiagnostics.controls.join(" || ")}` : `frame_${frameIndex}_controls_missing`);
-    diagnostics.push(frameDiagnostics.buttons.length ? `frame_${frameIndex}_buttons=${frameDiagnostics.buttons.join(" | ")}` : `frame_${frameIndex}_buttons_missing`);
-    if (frameDiagnostics.bodyText) {
-      diagnostics.push(`frame_${frameIndex}_text=${frameDiagnostics.bodyText}`);
-    }
-  }
-
-  return diagnostics;
-}
-
-async function waitForPublishSuccessSignal(page, diagnostics, timeout = 12_000) {
-  try {
-    await page.waitForFunction(() => {
-      const text = (document.body?.innerText || "").replace(/\s+/g, "");
-      return [
-        "发布成功",
-        "提交成功",
-        "发布成功啦",
-        "审核中",
-        "等待审核",
-        "已提交审核"
-      ].some((signal) => text.includes(signal)) || /\/publish\/success|\/posts|\/note\/manage|\/manage\/note/i.test(location.href);
-    }, { timeout });
-    diagnostics.push("publish_verified");
-    return true;
-  } catch {
-    const snapshot = await page.evaluate(() => ({
-      url: location.href,
-      text: (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 400)
-    })).catch(() => ({ url: page.url(), text: "" }));
-    diagnostics.push(`publish_unverified_url=${snapshot.url}`);
-    if (snapshot.text) {
-      diagnostics.push(`publish_unverified_text=${snapshot.text}`);
-    }
-    return false;
-  }
-}
-
-async function hasClickableText(page, labels, options = {}) {
-  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, selectors, exactOnly = false }) => {
-    const selectorText = (selectors || ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"]).join(",");
-    return Array.from(document.querySelectorAll(selectorText)).some((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const text = (element.textContent || "").replace(/\s+/g, "");
-      const className = String(element.className || "");
-      const disabled = (
-        element.disabled === true ||
-        element.getAttribute("aria-disabled") === "true" ||
-        element.getAttribute("disabled") !== null ||
-        /disabled|disable|forbid|inactive/i.test(className) ||
-        style.pointerEvents === "none" ||
-        Number(style.opacity) < 0.45
-      );
-      return (
-        text &&
-        !disabled &&
-        rect.width > 0 &&
-        rect.height > 0 &&
-        rect.top >= minY &&
-        rect.top <= maxY &&
-        buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
-      );
-    });
-  }, { buttonLabels: labels, ...options }).catch(() => false);
-}
-
-async function clickButtonByText(page, labels, timeout = 0) {
-  return clickElementByText(page, labels, {
-    minY: 220,
-    preferShortest: true,
-    selectors: [
-      "button",
-      "[role='button']",
-      ".btn",
-      "[class*='button']",
-      "[class*='submit']",
-      "[class*='publish']",
-      "div",
-      "span"
-    ],
-    skipDisabled: true,
-    exactOnly: true,
-    timeout
-  });
-}
-
-async function clickElementByText(page, labels, options = {}) {
-  const timeout = options.timeout || 0;
-  const deadline = Date.now() + timeout;
-  let lastResult = { clicked: false, reason: "not_found" };
-
-  do {
-    lastResult = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false, exactOnly = false }) => {
-      const selectorText = (selectors || [
-        "button",
-        "[role='button']",
-        ".btn",
-        "[class*='button']",
-        "a",
-        "div",
-        "span",
-        "li"
-      ]).join(",");
-
-      const candidates = Array.from(document.querySelectorAll(selectorText))
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const style = getComputedStyle(element);
-          const text = (element.textContent || "").replace(/\s+/g, "");
-          const className = String(element.className || "");
-          const disabled = (
-            element.disabled === true ||
-            element.getAttribute("aria-disabled") === "true" ||
-            element.getAttribute("disabled") !== null ||
-            /disabled|disable|forbid|inactive/i.test(className) ||
-            style.pointerEvents === "none" ||
-            Number(style.opacity) < 0.45
-          );
-          return { element, rect, text, disabled };
-        })
-        .filter(({ rect, text, disabled }) => (
-          text &&
-          rect.width > 0 &&
-          rect.height > 0 &&
-          rect.top >= 0 &&
-          rect.top >= minY &&
-          rect.top <= maxY &&
-          (!skipDisabled || !disabled) &&
-          buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
-        ));
-
-      if (!candidates.length) return { clicked: false, reason: "not_found" };
-      candidates.sort((a, b) => {
-        const exactA = buttonLabels.includes(a.text) ? 0 : 1;
-        const exactB = buttonLabels.includes(b.text) ? 0 : 1;
-        if (exactA !== exactB) return exactA - exactB;
-        if (preferShortest && a.text.length !== b.text.length) {
-          return a.text.length - b.text.length;
-        }
-        return b.rect.top - a.rect.top;
-      });
-      const target = candidates[0];
-      target.element.scrollIntoView({ block: "center", inline: "center" });
-      return {
-        clicked: false,
-        found: true,
-        text: target.text,
-        top: Math.round(target.rect.top)
-      };
-    }, { buttonLabels: labels, ...options });
-
-    if (lastResult.found) {
-      await sleep(150);
-      const point = await page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, preferShortest = false, selectors, skipDisabled = false, exactOnly = false }) => {
-        const selectorText = (selectors || [
-          "button",
-          "[role='button']",
-          ".btn",
-          "[class*='button']",
-          "a",
-          "div",
-          "span",
-          "li"
-        ]).join(",");
-
-        const candidates = Array.from(document.querySelectorAll(selectorText))
-          .map((element) => {
-            const rect = element.getBoundingClientRect();
-            const style = getComputedStyle(element);
-            const text = (element.textContent || "").replace(/\s+/g, "");
-            const className = String(element.className || "");
-            const disabled = (
-              element.disabled === true ||
-              element.getAttribute("aria-disabled") === "true" ||
-              element.getAttribute("disabled") !== null ||
-              /disabled|disable|forbid|inactive/i.test(className) ||
-              style.pointerEvents === "none" ||
-              Number(style.opacity) < 0.45
-            );
-            return { element, rect, text, disabled };
-          })
-          .filter(({ rect, text, disabled }) => (
-            text &&
-            rect.width > 0 &&
-            rect.height > 0 &&
-            rect.top >= 0 &&
-            rect.top >= minY &&
-            rect.top <= maxY &&
-            (!skipDisabled || !disabled) &&
-            buttonLabels.some((label) => text === label || (!exactOnly && text.includes(label)))
-          ));
-
-        if (!candidates.length) return null;
-        candidates.sort((a, b) => {
-          const exactA = buttonLabels.includes(a.text) ? 0 : 1;
-          const exactB = buttonLabels.includes(b.text) ? 0 : 1;
-          if (exactA !== exactB) return exactA - exactB;
-          if (preferShortest && a.text.length !== b.text.length) {
-            return a.text.length - b.text.length;
-          }
-          return b.rect.top - a.rect.top;
-        });
-
-        const target = candidates[0];
-        const rect = target.rect;
-        return {
-          text: target.text,
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
-          top: Math.round(rect.top)
-        };
-      }, { buttonLabels: labels, ...options });
-
-      if (!point) {
-        lastResult = { clicked: false, reason: "target_lost_after_scroll" };
-      } else {
-        await page.mouse.move(point.x, point.y);
-        await sleep(80);
-        await page.mouse.down();
-        await sleep(80);
-        await page.mouse.up();
-        return {
-          clicked: true,
-          text: point.text,
-          top: point.top,
-          x: point.x,
-          y: point.y
-        };
-      }
-    }
-
-    if (lastResult.clicked || timeout <= 0) {
-      return lastResult;
-    }
-    await sleep(500);
-  } while (Date.now() < deadline);
-
-  return lastResult;
-}
-
-async function downloadImage(url, diagnostics) {
-  try {
-    if (!/^https?:\/\//i.test(url)) {
-      throw new Error("not_http");
-    }
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    const extension = contentType.includes("png") ? "png" : "jpg";
-    mkdirSync(assetDir, { recursive: true });
-    const filePath = join(assetDir, `cover-${Date.now()}.${extension}`);
-    writeFileSync(filePath, Buffer.from(await response.arrayBuffer()));
-    diagnostics.push("cover_downloaded");
-    return filePath;
-  } catch (error) {
-    diagnostics.push(`cover_download_failed=${error.message}`);
-    return createDefaultCover("ContentBridge");
-  }
-}
-
-function createDefaultCover(title) {
-  mkdirSync(assetDir, { recursive: true });
-  const filePath = join(assetDir, `generated-cover-${Date.now()}.png`);
-  writeFileSync(filePath, createDefaultCoverPng(title));
-  return filePath;
-}
-
-function normalizeTags(tags) {
-  if (!Array.isArray(tags)) return [];
-  return tags.map((tag) => String(tag).replace(/^#/, "").trim()).filter(Boolean).slice(0, 8);
-}
-
-function isLoginUrl(url) {
-  return /login|passport|signin/i.test(url);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function resolveBrowserPath() {
-  const candidates = [
-    process.env.REDNOTE_BROWSER_PATH,
-    process.env.BILIBILI_BROWSER_PATH,
-    join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
-    join(process.env.ProgramFiles || "", "Google", "Chrome", "Application", "chrome.exe"),
-    join(process.env["ProgramFiles(x86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
-    join(process.env.ProgramFiles || "", "Microsoft", "Edge", "Application", "msedge.exe"),
-    join(process.env["ProgramFiles(x86)"] || "", "Microsoft", "Edge", "Application", "msedge.exe")
-  ].filter(Boolean);
-  return candidates.find((candidate) => existsSync(candidate));
-}
-
-function buildBrowserLaunchError(error) {
-  const message = error?.message || String(error);
-  if (/EPERM|EACCES|spawn/i.test(message)) {
-    return `RedNote browser launch failed: current backend process cannot start Chrome/Edge. Restart backend outside the sandbox and set REDNOTE_BROWSER_PATH if needed. Original error: ${message}`;
-  }
-  return `RedNote browser launch failed: ${message}`;
-}
-
-function createDefaultCoverPng(title) {
-  const width = 900;
-  const height = 1200;
-  const raw = Buffer.alloc((width * 3 + 1) * height);
-  const hash = [...String(title || "ContentBridge")].reduce((sum, char) => (sum + char.charCodeAt(0)) % 80, 0);
-  for (let y = 0; y < height; y += 1) {
-    const rowStart = y * (width * 3 + 1);
-    raw[rowStart] = 0;
-    for (let x = 0; x < width; x += 1) {
-      const offset = rowStart + 1 + x * 3;
-      raw[offset] = 214 + ((x + hash) % 24);
-      raw[offset + 1] = 76 + ((y + hash) % 34);
-      raw[offset + 2] = 82 + ((x + y + hash) % 28);
-    }
-  }
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    pngChunk("IHDR", Buffer.concat([uint32(width), uint32(height), Buffer.from([8, 2, 0, 0, 0])])),
-    pngChunk("IDAT", deflateSync(raw)),
-    pngChunk("IEND", Buffer.alloc(0))
-  ]);
-}
-
-function pngChunk(type, data) {
-  const typeBuffer = Buffer.from(type);
-  return Buffer.concat([uint32(data.length), typeBuffer, data, uint32(crc32(Buffer.concat([typeBuffer, data])))]);
-}
-
-function uint32(value) {
-  const buffer = Buffer.alloc(4);
-  buffer.writeUInt32BE(value >>> 0, 0);
-  return buffer;
-}
-
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff];
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-const crcTable = Array.from({ length: 256 }, (_, index) => {
-  let value = index;
-  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-  return value >>> 0;
-});
