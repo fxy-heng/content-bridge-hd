@@ -48,6 +48,8 @@ npm run smoke
 ## Git 提交概览
 
 ```text
+34a9d0b feat: add draft version snapshots
+d14df8a feat: import source drafts from markdown
 ccb6b8b feat: export readiness and publish reports
 33d31c0 docs: refresh handoff commit list
 3762311 feat: export publishing schedule calendar
