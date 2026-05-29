@@ -342,35 +342,49 @@ async function revealPublishControls(page) {
 }
 
 async function publishAndVerify(page, diagnostics) {
-  await revealPublishControls(page);
-  const clickResult = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"], 18_000);
-  if (!clickResult.clicked) {
-    diagnostics.push(`publish_button_missing=${clickResult.reason || "not_found"}`);
-    return {
-      status: "manual_required",
-      reason: "RedNote note content was filled, but the publish button was not found or was disabled. Please click publish manually in the kept-open browser page."
-    };
-  }
+  let sawPublishButton = false;
 
-  diagnostics.push(`publish_clicked=${clickResult.text || "unknown"}`);
-  await sleep(800);
-  const confirmResult = await clickElementByText(page, ["确认发布", "确认", "确定", "我知道了"], {
-    minY: 0,
-    preferShortest: true,
-    selectors: ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"],
-    skipDisabled: true,
-    timeout: 3_000
-  });
-  diagnostics.push(confirmResult.clicked ? `confirm_clicked=${confirmResult.text || "unknown"}` : "confirm_not_required");
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await revealPublishControls(page);
+    const clickResult = await clickButtonByText(page, ["立即发布", "发布笔记", "发布", "提交"], 18_000);
+    if (!clickResult.clicked) {
+      diagnostics.push(`publish_button_missing_attempt_${attempt}=${clickResult.reason || "not_found"}`);
+      break;
+    }
 
-  const verified = await waitForPublishSuccessSignal(page, diagnostics);
-  if (verified) {
-    return { status: "success" };
+    sawPublishButton = true;
+    diagnostics.push(`publish_clicked_attempt_${attempt}=${clickResult.text || "unknown"}`);
+    await sleep(1_200);
+
+    const confirmResult = await clickElementByText(page, ["确认发布", "确认", "确定", "我知道了"], {
+      minY: 0,
+      preferShortest: true,
+      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"],
+      skipDisabled: true,
+      timeout: 3_000
+    });
+    diagnostics.push(confirmResult.clicked ? `confirm_clicked_attempt_${attempt}=${confirmResult.text || "unknown"}` : `confirm_not_required_attempt_${attempt}`);
+
+    const verified = await waitForPublishSuccessSignal(page, diagnostics, 6_000);
+    if (verified) {
+      return { status: "success" };
+    }
+
+    const stillHasPublish = await hasClickableText(page, ["立即发布", "发布", "提交"], {
+      minY: 220,
+      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"]
+    });
+    diagnostics.push(stillHasPublish ? `publish_button_still_visible_attempt_${attempt}` : `publish_button_not_visible_attempt_${attempt}`);
+    if (!stillHasPublish) {
+      break;
+    }
   }
 
   return {
     status: "manual_required",
-    reason: "RedNote publish button was clicked, but the page did not show a verifiable success signal. Please confirm any pending dialog or final review state in the kept-open browser page."
+    reason: sawPublishButton
+      ? "RedNote publish button was clicked, but the page did not show a verifiable success signal. Please confirm any pending dialog or final review state in the kept-open browser page."
+      : "RedNote note content was filled, but the publish button was not found or was disabled. Please click publish manually in the kept-open browser page."
   };
 }
 
@@ -463,7 +477,7 @@ async function collectEditorDiagnostics(page) {
   return diagnostics;
 }
 
-async function waitForPublishSuccessSignal(page, diagnostics) {
+async function waitForPublishSuccessSignal(page, diagnostics, timeout = 12_000) {
   try {
     await page.waitForFunction(() => {
       const text = (document.body?.innerText || "").replace(/\s+/g, "");
@@ -475,7 +489,7 @@ async function waitForPublishSuccessSignal(page, diagnostics) {
         "等待审核",
         "已提交审核"
       ].some((signal) => text.includes(signal)) || /\/publish\/success|\/posts|\/note\/manage|\/manage\/note/i.test(location.href);
-    }, { timeout: 12_000 });
+    }, { timeout });
     diagnostics.push("publish_verified");
     return true;
   } catch {
@@ -489,6 +503,35 @@ async function waitForPublishSuccessSignal(page, diagnostics) {
     }
     return false;
   }
+}
+
+async function hasClickableText(page, labels, options = {}) {
+  return page.evaluate(({ buttonLabels, minY = 0, maxY = Number.POSITIVE_INFINITY, selectors }) => {
+    const selectorText = (selectors || ["button", "[role='button']", ".btn", "[class*='button']", "div", "span"]).join(",");
+    return Array.from(document.querySelectorAll(selectorText)).some((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const text = (element.textContent || "").replace(/\s+/g, "");
+      const className = String(element.className || "");
+      const disabled = (
+        element.disabled === true ||
+        element.getAttribute("aria-disabled") === "true" ||
+        element.getAttribute("disabled") !== null ||
+        /disabled|disable|forbid|inactive/i.test(className) ||
+        style.pointerEvents === "none" ||
+        Number(style.opacity) < 0.45
+      );
+      return (
+        text &&
+        !disabled &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.top >= minY &&
+        rect.top <= maxY &&
+        buttonLabels.some((label) => text === label || text.includes(label))
+      );
+    });
+  }, { buttonLabels: labels, ...options }).catch(() => false);
 }
 
 async function clickButtonByText(page, labels, timeout = 0) {
