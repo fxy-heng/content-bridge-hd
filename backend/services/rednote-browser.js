@@ -346,14 +346,17 @@ async function publishAndVerify(page, diagnostics) {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await revealPublishControls(page);
-    const clickResult = await clickButtonByText(page, ["立即发布", "发布", "提交"], 18_000);
+    const clickResult = await clickRednotePublishButton(page, 18_000);
     if (!clickResult.clicked) {
       diagnostics.push(`publish_button_missing_attempt_${attempt}=${clickResult.reason || "not_found"}`);
+      if (clickResult.candidates?.length) {
+        diagnostics.push(`publish_candidates_attempt_${attempt}=${clickResult.candidates.join(" || ")}`);
+      }
       break;
     }
 
     sawPublishButton = true;
-    diagnostics.push(`publish_clicked_attempt_${attempt}=${clickResult.text || "unknown"}`);
+    diagnostics.push(`publish_clicked_attempt_${attempt}=${clickResult.text || "unknown"}@${clickResult.x},${clickResult.y};bg=${clickResult.background || "unknown"};class=${clickResult.className || ""}`);
     await sleep(1_200);
 
     const confirmResult = await clickElementByText(page, ["确认发布", "确认", "确定", "我知道了"], {
@@ -370,11 +373,7 @@ async function publishAndVerify(page, diagnostics) {
       return { status: "success" };
     }
 
-    const stillHasPublish = await hasClickableText(page, ["立即发布", "发布", "提交"], {
-      minY: 220,
-      selectors: ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"],
-      exactOnly: true
-    });
+    const stillHasPublish = await hasRednotePublishButton(page);
     diagnostics.push(stillHasPublish ? `publish_button_still_visible_attempt_${attempt}` : `publish_button_not_visible_attempt_${attempt}`);
     if (!stillHasPublish) {
       break;
@@ -387,6 +386,184 @@ async function publishAndVerify(page, diagnostics) {
       ? "RedNote publish button was clicked, but the page did not show a verifiable success signal. Please confirm any pending dialog or final review state in the kept-open browser page."
       : "RedNote note content was filled, but the publish button was not found or was disabled. Please click publish manually in the kept-open browser page."
   };
+}
+
+async function clickRednotePublishButton(page, timeout = 0) {
+  const deadline = Date.now() + timeout;
+  let lastResult = { clicked: false, reason: "not_found" };
+
+  do {
+    const candidate = await findRednotePublishButton(page);
+    if (candidate) {
+      await page.mouse.move(candidate.x, candidate.y);
+      await sleep(80);
+      await page.mouse.down();
+      await sleep(80);
+      await page.mouse.up();
+      return {
+        clicked: true,
+        ...candidate
+      };
+    }
+
+    lastResult = {
+      clicked: false,
+      reason: "not_found",
+      candidates: await listRednotePublishCandidates(page)
+    };
+    if (timeout <= 0) {
+      return lastResult;
+    }
+    await sleep(500);
+  } while (Date.now() < deadline);
+
+  return lastResult;
+}
+
+async function hasRednotePublishButton(page) {
+  return Boolean(await findRednotePublishButton(page));
+}
+
+async function findRednotePublishButton(page) {
+  return page.evaluate(() => {
+    const candidates = (() => {
+      const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
+      const labels = ["发布", "立即发布", "提交"];
+      const selector = ["button", "[role='button']", ".btn", "[class*='button']", "[class*='submit']", "[class*='publish']", "div", "span"].join(",");
+
+      const normalize = (value) => (value || "").replace(/\s+/g, "");
+      const colorScore = (value) => {
+        const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(value || "");
+        if (!match) return 0;
+        const [, r, g, b] = match.map(Number);
+        if (r >= 220 && g <= 100 && b <= 130) return 80;
+        if (r >= 180 && g <= 120 && b <= 150) return 45;
+        return 0;
+      };
+      const isDisabled = (element, style) => {
+        const className = String(element.className || "");
+        return (
+          element.disabled === true ||
+          element.getAttribute("aria-disabled") === "true" ||
+          element.getAttribute("disabled") !== null ||
+          /disabled|disable|forbid|inactive/i.test(className) ||
+          style.pointerEvents === "none" ||
+          Number(style.opacity) < 0.45
+        );
+      };
+      const clickableAncestor = (element) => {
+        let current = element;
+        for (let depth = 0; current && depth < 5; depth += 1) {
+          const rect = current.getBoundingClientRect();
+          const style = getComputedStyle(current);
+          const className = String(current.className || "");
+          const role = current.getAttribute("role") || "";
+          const pointerish = (
+            current.tagName === "BUTTON" ||
+            role === "button" ||
+            /btn|button|submit|publish/i.test(className) ||
+            colorScore(style.backgroundColor) > 0 ||
+            style.cursor === "pointer"
+          );
+          if (
+            pointerish &&
+            rect.width >= 40 &&
+            rect.width <= 260 &&
+            rect.height >= 24 &&
+            rect.height <= 90
+          ) {
+            return current;
+          }
+          current = current.parentElement;
+        }
+        return element;
+      };
+
+      return Array.from(document.querySelectorAll(selector))
+        .map((element) => {
+          const rawText = normalize(element.textContent);
+          if (!rawText || badTexts.some((bad) => rawText.includes(bad))) {
+            return null;
+          }
+          const exact = labels.includes(rawText);
+          const contains = labels.some((label) => rawText.includes(label));
+          if (!exact && !contains) {
+            return null;
+          }
+          const target = clickableAncestor(element);
+          const rect = target.getBoundingClientRect();
+          const style = getComputedStyle(target);
+          if (
+            isDisabled(target, style) ||
+            rect.width <= 0 ||
+            rect.height <= 0 ||
+            rect.top < 180 ||
+            rect.bottom > window.innerHeight + 20
+          ) {
+            return null;
+          }
+          const background = style.backgroundColor;
+          const redScore = colorScore(background);
+          const text = normalize(target.textContent) || rawText;
+          if (badTexts.some((bad) => text.includes(bad))) {
+            return null;
+          }
+          const exactTarget = labels.includes(text) || exact;
+          const shortText = text.length <= 6 ? 25 : 0;
+          const bottomScore = rect.top > window.innerHeight - 180 ? 25 : 0;
+          const buttonShape = rect.width >= 60 && rect.width <= 180 && rect.height >= 28 && rect.height <= 60 ? 20 : 0;
+          const score = (exactTarget ? 140 : 40) + redScore + shortText + bottomScore + buttonShape;
+          return {
+            text,
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            background,
+            className: String(target.className || "").slice(0, 80),
+            score
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score || b.top - a.top);
+    })();
+    return candidates[0] || null;
+  }).catch(() => null);
+}
+
+async function listRednotePublishCandidates(page) {
+  return page.evaluate(() => (
+    (() => {
+      const badTexts = ["定时发布", "发布笔记", "上传图文", "上传视频", "写长文", "发播客", "允许"];
+      const labels = ["发布", "立即发布", "提交"];
+      return Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button'],[class*='submit'],[class*='publish'],div,span"))
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const text = (element.textContent || "").replace(/\s+/g, "");
+          if (!text || badTexts.some((bad) => text.includes(bad)) || !labels.some((label) => text === label || text.includes(label))) {
+            return null;
+          }
+          const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(style.backgroundColor || "");
+          const red = match ? Number(match[1]) >= 180 && Number(match[2]) <= 120 && Number(match[3]) <= 150 : false;
+          const exact = labels.includes(text);
+          const score = (exact ? 140 : 40) + (red ? 80 : 0) + (rect.top > window.innerHeight - 180 ? 25 : 0);
+          return {
+            text,
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+            background: style.backgroundColor,
+            className: String(element.className || "").slice(0, 80),
+            score
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+    })()
+      .slice(0, 8)
+      .map((item) => `${item.text}@${item.x},${item.y};score=${item.score};bg=${item.background};class=${item.className}`)
+  )).catch(() => []);
 }
 
 async function uploadImageForRednote(page, imagePath, diagnostics) {
