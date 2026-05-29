@@ -92,6 +92,9 @@ const elements = {
   wechatStatus: document.querySelector("#wechatStatus"),
   saveWechatCreds: document.querySelector("#saveWechatCreds"),
   removeWechatCreds: document.querySelector("#removeWechatCreds"),
+  zhihuStatus: document.querySelector("#zhihuStatus"),
+  openZhihuLogin: document.querySelector("#openZhihuLogin"),
+  refreshZhihuStatus: document.querySelector("#refreshZhihuStatus"),
   bilibiliStatus: document.querySelector("#bilibiliStatus"),
   openBilibiliLogin: document.querySelector("#openBilibiliLogin"),
   refreshBilibiliStatus: document.querySelector("#refreshBilibiliStatus"),
@@ -129,6 +132,8 @@ elements.exportRules.addEventListener("click", exportPlatformRules);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
 elements.saveWechatCreds.addEventListener("click", saveWechatCredentials);
 elements.removeWechatCreds.addEventListener("click", removeWechatCredentials);
+elements.openZhihuLogin.addEventListener("click", openZhihuLogin);
+elements.refreshZhihuStatus.addEventListener("click", refreshZhihuStatus);
 elements.openBilibiliLogin.addEventListener("click", openBilibiliLogin);
 elements.refreshBilibiliStatus.addEventListener("click", refreshBilibiliStatus);
 elements.openRednoteLogin.addEventListener("click", openRednoteLogin);
@@ -825,6 +830,32 @@ async function removeWechatCredentials() {
   }
 }
 
+async function openZhihuLogin() {
+  setZhihuStatus("disconnected", "正在打开知乎登录窗口...");
+  try {
+    const response = await fetch("/api/zhihu/login", { method: "POST" });
+    const data = await response.json();
+    if (data.ok) {
+      setZhihuStatus("connected", "请在打开的浏览器窗口登录，然后刷新状态");
+    } else {
+      setZhihuStatus("disconnected", data.error || "登录窗口打开失败");
+    }
+  } catch (err) {
+    setZhihuStatus("disconnected", `后端连接失败: ${err.message}`);
+  }
+}
+
+async function refreshZhihuStatus() {
+  setZhihuStatus("disconnected", "正在检测登录态...");
+  try {
+    const response = await fetch("/api/zhihu/status");
+    const data = await response.json();
+    setZhihuStatus(data.connected ? "connected" : "disconnected", data.connected ? "已登录，可尝试真实发布" : "未登录或登录已失效");
+  } catch (err) {
+    setZhihuStatus("disconnected", `检测失败: ${err.message}`);
+  }
+}
+
 async function openBilibiliLogin() {
   setBilibiliStatus("disconnected", "正在打开 B 站登录窗口...");
   try {
@@ -880,6 +911,11 @@ async function refreshRednoteStatus() {
 function setWechatStatus(className, message) {
   elements.wechatStatus.className = `account-status ${className}`;
   elements.wechatStatus.textContent = message;
+}
+
+function setZhihuStatus(className, message) {
+  elements.zhihuStatus.className = `account-status ${className}`;
+  elements.zhihuStatus.textContent = message;
 }
 
 function setBilibiliStatus(className, message) {

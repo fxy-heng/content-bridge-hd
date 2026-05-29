@@ -13,6 +13,7 @@ try {
   const credentials = await fetchJson(`${baseUrl}/api/credentials`);
   assert(Array.isArray(credentials), "credentials endpoint should return a list");
   assert(credentials.some((item) => item.platform === "wechat"), "credentials should include wechat summary");
+  assert(credentials.some((item) => item.platform === "zhihu"), "credentials should include zhihu summary");
   assert(credentials.some((item) => item.platform === "bilibili"), "credentials should include bilibili summary");
 
   const missingWechat = await fetch(`${baseUrl}/api/wechat/publish`, {

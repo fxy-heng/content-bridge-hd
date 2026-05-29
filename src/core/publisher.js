@@ -24,6 +24,7 @@ async function getBackendState() {
     // Browser-automated platforms use persisted browser profiles rather than static credentials.
     // When the backend is running, the real publish path can report login_required
     // and open the QR-login flow instead of silently pretending a publish worked.
+    realPlatforms.add("zhihu");
     realPlatforms.add("bilibili");
     realPlatforms.add("rednote");
 
@@ -80,12 +81,13 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
 }
 
 function supportsRealPublish(platform) {
-  return platform === "wechat" || platform === "bilibili" || platform === "rednote";
+  return platform === "wechat" || platform === "zhihu" || platform === "bilibili" || platform === "rednote";
 }
 
 async function realPublish(item) {
   const endpoints = {
     wechat: "/api/wechat/publish",
+    zhihu: "/api/zhihu/publish",
     bilibili: "/api/bilibili/publish",
     rednote: "/api/rednote/publish"
   };

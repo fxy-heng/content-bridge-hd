@@ -32,6 +32,21 @@ router.get("/", (req, res) => {
       }
     });
   }
+  if (!platforms.has("zhihu")) {
+    platforms.set("zhihu", {
+      platform: "zhihu",
+      displayName: "Zhihu",
+      connected: false,
+      updatedAt: "",
+      detail: {
+        appId: "",
+        hasSecret: false,
+        author: "",
+        hasThumbMediaId: false,
+        browserProfile: ""
+      }
+    });
+  }
 
   res.json([...platforms.values()]);
 });

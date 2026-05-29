@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import credentialsRouter from "./routes/credentials.js";
 import wechatRouter from "./routes/wechat.js";
+import zhihuRouter from "./routes/zhihu.js";
 import bilibiliRouter from "./routes/bilibili.js";
 import rednoteRouter from "./routes/rednote.js";
 
@@ -22,12 +23,13 @@ export function createApp() {
       ok: true,
       name: "ContentBridge backend",
       version: "0.2.0",
-      realPublish: ["wechat", "bilibili", "rednote"]
+      realPublish: ["wechat", "zhihu", "bilibili", "rednote"]
     });
   });
 
   app.use("/api/credentials", credentialsRouter);
   app.use("/api/wechat", wechatRouter);
+  app.use("/api/zhihu", zhihuRouter);
   app.use("/api/bilibili", bilibiliRouter);
   app.use("/api/rednote", rednoteRouter);
 

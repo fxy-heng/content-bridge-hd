@@ -163,6 +163,11 @@
               <button type="button" id="removeWechatCreds">删除凭证</button>
             </div>
             <div class="account-form account-section">
+              <div class="account-status disconnected" id="zhihuStatus">知乎未检测</div>
+              <button type="button" id="openZhihuLogin">打开知乎登录</button>
+              <button type="button" id="refreshZhihuStatus">刷新知乎登录态</button>
+            </div>
+            <div class="account-form account-section">
               <div class="account-status disconnected" id="bilibiliStatus">B站未检测</div>
               <button type="button" id="openBilibiliLogin">打开 B站扫码登录</button>
               <button type="button" id="refreshBilibiliStatus">刷新 B站登录态</button>
@@ -172,7 +177,7 @@
               <button type="button" id="openRednoteLogin">打开小红书登录</button>
               <button type="button" id="refreshRednoteStatus">刷新小红书登录态</button>
             </div>
-            <p class="account-note">B站通过本机浏览器资料目录保存登录态。第一次使用请先启动后端，再扫码登录。</p>
+            <p class="account-note">知乎、B站、小红书通过本机浏览器资料目录保存登录态。第一次使用请先启动后端，再完成网页登录。</p>
           </details>
 
           <div class="actions">
@@ -244,6 +249,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=20260529-rednote-login"></script>
+    <script type="module" src="./src/app.js?v=20260529-zhihu-login"></script>
   </body>
 </html>
