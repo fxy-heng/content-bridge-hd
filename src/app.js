@@ -8,6 +8,7 @@ import {
 } from "./core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
 import { publishToPlatforms } from "./core/publisher.js";
+import { buildPublishLogCsv, buildReadinessCsv } from "./core/reports.js";
 import { buildPublishingStrategy } from "./core/strategy.js";
 import { contentTemplates, getTemplate } from "./core/templates.js";
 
@@ -37,6 +38,7 @@ const elements = {
   previewGrid: document.querySelector("#previewGrid"),
   readinessGrid: document.querySelector("#readinessGrid"),
   readinessSummary: document.querySelector("#readinessSummary"),
+  readinessCsv: document.querySelector("#readinessCsv"),
   strategyPrimary: document.querySelector("#strategyPrimary"),
   strategyList: document.querySelector("#strategyList"),
   summaryText: document.querySelector("#summaryText"),
@@ -56,6 +58,7 @@ const elements = {
   saveDraft: document.querySelector("#saveDraft"),
   loadSample: document.querySelector("#loadSample"),
   clearLog: document.querySelector("#clearLog"),
+  logCsv: document.querySelector("#logCsv"),
   addPlatform: document.querySelector("#addPlatform"),
   resetPlatforms: document.querySelector("#resetPlatforms"),
   customKey: document.querySelector("#customKey"),
@@ -84,6 +87,8 @@ elements.loadSample.addEventListener("click", () => {
   adaptCurrentContent();
 });
 elements.clearLog.addEventListener("click", clearLogs);
+elements.readinessCsv.addEventListener("click", exportReadinessCsv);
+elements.logCsv.addEventListener("click", exportLogCsv);
 elements.addPlatform.addEventListener("click", addCustomPlatform);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
 
@@ -199,6 +204,23 @@ function exportCalendar() {
   }
   downloadText("content-bridge-schedule.ics", buildScheduleCalendar(state.adapted), "text/calendar");
   elements.summaryText.textContent = `已导出 ${count} 个日历事件`;
+}
+
+function exportReadinessCsv() {
+  if (!state.adapted.length) {
+    adaptCurrentContent();
+  }
+  downloadText("content-bridge-readiness.csv", buildReadinessCsv(state.adapted), "text/csv");
+  elements.summaryText.textContent = "发布准备度 CSV 已导出";
+}
+
+function exportLogCsv() {
+  if (!state.logs.length) {
+    elements.summaryText.textContent = "暂无发布日志可导出";
+    return;
+  }
+  downloadText("content-bridge-publish-log.csv", buildPublishLogCsv(state.logs), "text/csv");
+  elements.summaryText.textContent = "发布日志 CSV 已导出";
 }
 
 async function importWorkspace(event) {

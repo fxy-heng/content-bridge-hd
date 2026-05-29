@@ -9,6 +9,7 @@ import {
 } from "../src/core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
+import { buildPublishLogCsv, buildReadinessCsv } from "../src/core/reports.js";
 import { buildPublishingStrategy } from "../src/core/strategy.js";
 import { contentTemplates, getTemplate } from "../src/core/templates.js";
 
@@ -150,6 +151,20 @@ test("exports scheduled platforms as calendar events", () => {
   assert.equal(countScheduledItems(adapted), 2);
   assert.ok(calendar.includes("BEGIN:VCALENDAR"));
   assert.ok(calendar.includes("SUMMARY:公众号 发布"));
+});
+
+test("exports readiness and publish logs as csv", async () => {
+  const adapted = adaptForPlatforms(source, ["wechat"]);
+  const logs = await publishToPlatforms(adapted, {
+    now: new Date("2026-05-29T00:00:00.000Z")
+  });
+  const readinessCsv = buildReadinessCsv(adapted);
+  const logCsv = buildPublishLogCsv(logs);
+
+  assert.ok(readinessCsv.includes("platform,displayName,status"));
+  assert.ok(readinessCsv.includes("wechat"));
+  assert.ok(logCsv.includes("id,platform,displayName"));
+  assert.ok(logCsv.includes("success"));
 });
 
 test("simulated publisher returns publish results", async () => {

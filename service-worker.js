@@ -10,7 +10,8 @@ const ASSETS = [
   "./src/core/publisher.js",
   "./src/core/templates.js",
   "./src/core/strategy.js",
-  "./src/core/calendar.js"
+  "./src/core/calendar.js",
+  "./src/core/reports.js"
 ];
 
 self.addEventListener("install", (event) => {
