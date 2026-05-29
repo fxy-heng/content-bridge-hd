@@ -6,6 +6,7 @@ import {
   sanitizeCustomPlatforms,
   scoreSourceContent
 } from "./core/adapters.js";
+import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
 import { publishToPlatforms } from "./core/publisher.js";
 import { buildPublishingStrategy } from "./core/strategy.js";
 import { contentTemplates, getTemplate } from "./core/templates.js";
@@ -49,6 +50,7 @@ const elements = {
   adaptButton: document.querySelector("#adaptButton"),
   publishButton: document.querySelector("#publishButton"),
   exportButton: document.querySelector("#exportButton"),
+  calendarButton: document.querySelector("#calendarButton"),
   importButton: document.querySelector("#importButton"),
   importFile: document.querySelector("#importFile"),
   saveDraft: document.querySelector("#saveDraft"),
@@ -69,6 +71,7 @@ const elements = {
 elements.adaptButton.addEventListener("click", adaptCurrentContent);
 elements.publishButton.addEventListener("click", publishCurrentContent);
 elements.exportButton.addEventListener("click", exportWorkspace);
+elements.calendarButton.addEventListener("click", exportCalendar);
 elements.importButton.addEventListener("click", () => elements.importFile.click());
 elements.importFile.addEventListener("change", importWorkspace);
 elements.templateSelect.addEventListener("change", () => {
@@ -183,6 +186,19 @@ function exportWorkspace() {
     2
   );
   downloadText("content-bridge-workspace.json", payload, "application/json");
+}
+
+function exportCalendar() {
+  if (!state.adapted.length) {
+    adaptCurrentContent();
+  }
+  const count = countScheduledItems(state.adapted);
+  if (!count) {
+    elements.summaryText.textContent = "没有可导出的计划发布时间";
+    return;
+  }
+  downloadText("content-bridge-schedule.ics", buildScheduleCalendar(state.adapted), "text/calendar");
+  elements.summaryText.textContent = `已导出 ${count} 个日历事件`;
 }
 
 async function importWorkspace(event) {

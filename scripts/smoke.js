@@ -12,6 +12,7 @@ const requiredFiles = [
   "src/core/publisher.js",
   "src/core/templates.js",
   "src/core/strategy.js",
+  "src/core/calendar.js",
   "docs/architecture.md",
   "docs/demo-script.md",
   "docs/api-contract.md",
@@ -33,6 +34,7 @@ assertIncludes(html, "readinessGrid", "readiness dashboard");
 assertIncludes(html, "templateSelect", "template selector");
 assertIncludes(app, "adaptForPlatforms", "adapter workflow");
 assertIncludes(app, "buildPublishingStrategy", "strategy workflow");
+assertIncludes(app, "buildScheduleCalendar", "calendar export workflow");
 assertIncludes(readme, "npm start", "startup command");
 assertIncludes(readme, "npm test", "test command");
 

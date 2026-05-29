@@ -7,6 +7,7 @@ import {
   scoreSourceContent,
   validateAdaptedContent
 } from "../src/core/adapters.js";
+import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
 import { buildPublishingStrategy } from "../src/core/strategy.js";
 import { contentTemplates, getTemplate } from "../src/core/templates.js";
@@ -132,6 +133,23 @@ test("builds publishing strategy from adapted readiness", () => {
 
   assert.equal(strategy.primaryPlatform, "公众号");
   assert.ok(strategy.recommendations.length >= 3);
+});
+
+test("exports scheduled platforms as calendar events", () => {
+  const adapted = adaptForPlatforms(
+    {
+      ...source,
+      scheduleAt: "2026-05-30T10:00"
+    },
+    ["wechat", "zhihu"]
+  );
+  const calendar = buildScheduleCalendar(adapted, {
+    now: new Date("2026-05-29T00:00:00.000Z")
+  });
+
+  assert.equal(countScheduledItems(adapted), 2);
+  assert.ok(calendar.includes("BEGIN:VCALENDAR"));
+  assert.ok(calendar.includes("SUMMARY:公众号 发布"));
 });
 
 test("simulated publisher returns publish results", async () => {
