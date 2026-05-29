@@ -8,6 +8,7 @@ import {
   validateAdaptedContent
 } from "../src/core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar.js";
+import { parseMarkdownDraft } from "../src/core/markdown.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "../src/core/reports.js";
 import { buildPublishingStrategy } from "../src/core/strategy.js";
@@ -165,6 +166,20 @@ test("exports readiness and publish logs as csv", async () => {
   assert.ok(readinessCsv.includes("wechat"));
   assert.ok(logCsv.includes("id,platform,displayName"));
   assert.ok(logCsv.includes("success"));
+});
+
+test("imports markdown drafts into structured content", () => {
+  const draft = parseMarkdownDraft(`# 标题示例
+
+tags: AI工具,内容创作
+
+正文第一段。
+
+正文第二段。`);
+
+  assert.equal(draft.title, "标题示例");
+  assert.equal(draft.tags, "AI工具,内容创作");
+  assert.ok(draft.body.includes("正文第一段"));
 });
 
 test("simulated publisher returns publish results", async () => {

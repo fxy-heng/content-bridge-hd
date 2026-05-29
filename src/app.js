@@ -7,6 +7,7 @@ import {
   scoreSourceContent
 } from "./core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
+import { parseMarkdownDraft } from "./core/markdown.js";
 import { publishToPlatforms } from "./core/publisher.js";
 import { buildPublishLogCsv, buildReadinessCsv } from "./core/reports.js";
 import { buildPublishingStrategy } from "./core/strategy.js";
@@ -55,6 +56,8 @@ const elements = {
   calendarButton: document.querySelector("#calendarButton"),
   importButton: document.querySelector("#importButton"),
   importFile: document.querySelector("#importFile"),
+  markdownButton: document.querySelector("#markdownButton"),
+  markdownFile: document.querySelector("#markdownFile"),
   saveDraft: document.querySelector("#saveDraft"),
   loadSample: document.querySelector("#loadSample"),
   clearLog: document.querySelector("#clearLog"),
@@ -77,6 +80,8 @@ elements.exportButton.addEventListener("click", exportWorkspace);
 elements.calendarButton.addEventListener("click", exportCalendar);
 elements.importButton.addEventListener("click", () => elements.importFile.click());
 elements.importFile.addEventListener("change", importWorkspace);
+elements.markdownButton.addEventListener("click", () => elements.markdownFile.click());
+elements.markdownFile.addEventListener("change", importMarkdownDraft);
 elements.templateSelect.addEventListener("change", () => {
   applyTemplate(elements.templateSelect.value);
   adaptCurrentContent();
@@ -244,6 +249,30 @@ async function importWorkspace(event) {
     elements.summaryText.textContent = "工作区已导入";
   } catch {
     elements.summaryText.textContent = "导入失败，请检查 JSON 文件格式";
+  } finally {
+    event.target.value = "";
+  }
+}
+
+async function importMarkdownDraft(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const draft = parseMarkdownDraft(await file.text());
+    writeSourceContent({
+      ...readSourceContent(),
+      title: draft.title || elements.title.value,
+      body: draft.body,
+      tags: draft.tags || elements.tags.value
+    });
+    autoSaveDraft();
+    adaptCurrentContent();
+    elements.summaryText.textContent = "Markdown 草稿已导入";
+  } catch {
+    elements.summaryText.textContent = "Markdown 导入失败";
   } finally {
     event.target.value = "";
   }

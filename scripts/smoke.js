@@ -14,6 +14,7 @@ const requiredFiles = [
   "src/core/strategy.js",
   "src/core/calendar.js",
   "src/core/reports.js",
+  "src/core/markdown.js",
   "docs/architecture.md",
   "docs/demo-script.md",
   "docs/api-contract.md",
@@ -37,6 +38,7 @@ assertIncludes(app, "adaptForPlatforms", "adapter workflow");
 assertIncludes(app, "buildPublishingStrategy", "strategy workflow");
 assertIncludes(app, "buildScheduleCalendar", "calendar export workflow");
 assertIncludes(app, "buildReadinessCsv", "readiness csv export workflow");
+assertIncludes(app, "parseMarkdownDraft", "markdown import workflow");
 assertIncludes(readme, "npm start", "startup command");
 assertIncludes(readme, "npm test", "test command");
 
