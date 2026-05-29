@@ -243,7 +243,7 @@ test("simulated publisher supports future scheduled publishing", async () => {
   });
 
   assert.equal(results[0].status, "scheduled");
-  assert.equal(results[0].reason, "已进入模拟排期队列");
+  assert.equal(results[0].reason, "Added to the simulated scheduling queue.");
 });
 
 test("simulated publisher marks validation errors as failed", async () => {

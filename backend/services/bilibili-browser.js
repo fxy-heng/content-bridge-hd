@@ -1,58 +1,67 @@
 import puppeteer from "puppeteer";
-import { join, dirname } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const COOKIE_FILE = join(__dirname, "..", "data", "bilibili-cookies.json");
-const BILIBILI_LOGIN = "https://passport.bilibili.com/login";
-const BILIBILI_EDITOR = "https://member.bilibili.com/platform/upload/text/edit";
+const profileDir = join(__dirname, "..", "data", "bilibili-profile");
+const loginUrl = "https://passport.bilibili.com/login";
+const creatorHomeUrl = "https://member.bilibili.com/platform/home";
+const articleEditorUrl = "https://member.bilibili.com/platform/upload/text/edit";
 
 let browserInstance = null;
+let loginPage = null;
 
 async function getBrowser() {
-  if (browserInstance && browserInstance.isConnected()) {
+  if (browserInstance?.isConnected()) {
     return browserInstance;
   }
+
+  mkdirSync(profileDir, { recursive: true });
   browserInstance = await puppeteer.launch({
-    headless: false,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    defaultViewport: { width: 1280, height: 800 }
+    headless: process.env.BILIBILI_HEADLESS === "1" ? "new" : false,
+    userDataDir: profileDir,
+    defaultViewport: { width: 1366, height: 900 },
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled"
+    ]
   });
+
   return browserInstance;
 }
 
-async function loadCookies(page) {
-  if (existsSync(COOKIE_FILE)) {
-    try {
-      const cookies = JSON.parse(readFileSync(COOKIE_FILE, "utf8"));
-      await page.setCookie(...cookies);
-      return cookies.length > 0;
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
+export async function openLoginPage() {
+  const browser = await getBrowser();
+  loginPage = await browser.newPage();
+  await loginPage.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
-async function saveCookies(page) {
-  const cookies = await page.cookies();
-  mkdirSync(dirname(COOKIE_FILE), { recursive: true });
-  writeFileSync(COOKIE_FILE, JSON.stringify(cookies, null, 2));
+  return {
+    ok: true,
+    platform: "bilibili",
+    status: "login_required",
+    loginUrl,
+    profileDir,
+    message: "Scan the QR code in the opened browser window, then call /api/bilibili/status."
+  };
 }
 
 export async function checkLoginStatus() {
   const browser = await getBrowser();
   const page = await browser.newPage();
-  try {
-    await loadCookies(page);
-    await page.goto("https://member.bilibili.com/platform/home", {
-      waitUntil: "networkidle2",
-      timeout: 30000
-    });
 
-    const loggedIn = !page.url().includes("login");
-    return { loggedIn, currentUrl: page.url() };
+  try {
+    await page.goto(creatorHomeUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForNetworkIdle({ idleTime: 800, timeout: 10_000 }).catch(() => {});
+    const currentUrl = page.url();
+    const loggedIn = !/passport\.bilibili\.com|\/login/i.test(currentUrl);
+
+    return {
+      loggedIn,
+      currentUrl,
+      profileDir
+    };
   } finally {
     await page.close();
   }
@@ -61,124 +70,112 @@ export async function checkLoginStatus() {
 export async function publishArticle({ title, body, tags = [], coverUrl = "" }) {
   const browser = await getBrowser();
   const page = await browser.newPage();
+  let keepPageOpen = false;
 
   try {
-    // Load saved cookies
-    const hasCookies = await loadCookies(page);
+    await page.goto(articleEditorUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForNetworkIdle({ idleTime: 800, timeout: 15_000 }).catch(() => {});
 
-    // Navigate to article editor
-    await page.goto(BILIBILI_EDITOR, { waitUntil: "networkidle2", timeout: 30000 });
-
-    // Check if we need to login
-    if (page.url().includes("login") || page.url().includes("passport")) {
-      if (hasCookies) {
-        throw new Error("B站登录状态已过期，请在浏览器中重新登录");
-      }
-      throw new Error("首次使用需要登录 B站。即将打开浏览器，请在浏览器中扫码登录后重试。");
+    if (/passport\.bilibili\.com|\/login/i.test(page.url())) {
+      return {
+        status: "login_required",
+        platform: "bilibili",
+        mode: "real",
+        reason: "Bilibili login is required. Open /api/bilibili/login and scan the QR code."
+      };
     }
 
-    // Wait for editor to load
-    await page.waitForSelector('input[placeholder*="标题"]', { timeout: 15000 }).catch(() => {
-      throw new Error("未找到 B站专栏编辑器页面，请确认创作中心页面正常加载");
-    });
+    const titleFilled = await fillFirst(page, [
+      'input[placeholder*="标题"]',
+      'textarea[placeholder*="标题"]',
+      'input[maxlength="80"]',
+      'input[type="text"]'
+    ], title.slice(0, 80));
 
-    // Fill title
-    const titleInput = await page.$('input[placeholder*="标题"]');
-    if (titleInput) {
-      await titleInput.click();
-      await page.keyboard.down("Control");
-      await page.keyboard.press("KeyA");
-      await page.keyboard.up("Control");
-      await titleInput.type(title.slice(0, 100));
+    if (!titleFilled) {
+      throw new Error("Bilibili article title input was not found. The creator center UI may have changed.");
     }
 
-    // Fill body — B站 uses a rich text editor, try finding the editor area
-    const editorSelectors = [
+    const bodyFilled = await fillFirst(page, [
       'div[contenteditable="true"]',
-      ".editor-content",
       ".ql-editor",
-      '[role="textbox"]'
-    ];
+      ".ProseMirror",
+      '[role="textbox"]',
+      "textarea"
+    ], body.slice(0, 50_000));
 
-    let editorFound = false;
-    for (const selector of editorSelectors) {
-      try {
-        const editor = await page.$(selector);
-        if (editor) {
-          await editor.click();
-          await page.keyboard.down("Control");
-          await page.keyboard.press("KeyA");
-          await page.keyboard.up("Control");
-          await editor.type(body.slice(0, 50000));
-          editorFound = true;
-          break;
-        }
-      } catch {
-        continue;
-      }
+    if (!bodyFilled) {
+      throw new Error("Bilibili article editor was not found. The creator center UI may have changed.");
     }
 
-    if (!editorFound) {
-      throw new Error("未找到 B站专栏正文编辑器，请手动在浏览器中发布，或联系开发者更新选择器");
+    if (Array.isArray(tags) && tags.length) {
+      await fillFirst(page, [
+        'input[placeholder*="标签"]',
+        'input[placeholder*="tag"]'
+      ], tags.slice(0, 10).join(","));
     }
 
-    // Fill tags if any
-    if (tags.length > 0) {
-      const tagInput = await page.$('input[placeholder*="标签"]');
-      if (tagInput) {
-        await tagInput.type(tags.slice(0, 10).join(","));
-      }
+    const clicked = await clickButtonByText(page, ["发布", "提交", "立即发布"]);
+    if (!clicked) {
+      keepPageOpen = true;
+      return {
+        status: "manual_required",
+        platform: "bilibili",
+        mode: "real",
+        reason: "Content has been filled in the Bilibili editor, but the publish button was not found. Please publish manually in the opened browser.",
+        currentUrl: page.url()
+      };
     }
 
-    // Click publish button
-    const publishSelectors = [
-      'button:has-text("发布")',
-      'button:has-text("提交")',
-      '[class*="publish"]',
-      '[class*="submit"]'
-    ];
-
-    let published = false;
-    for (const selector of publishSelectors) {
-      try {
-        const button = await page.$(selector);
-        if (button) {
-          await button.click();
-          published = true;
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!published) {
-      // Save cookies and throw — user needs to manually publish
-      await saveCookies(page);
-      throw new Error("内容已填入编辑器，但未找到发布按钮。请手动点击发布。");
-    }
-
-    // Wait for success indication
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Save cookies for next time
-    await saveCookies(page);
-
+    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15_000 }).catch(() => {});
     return {
       status: "success",
       platform: "bilibili",
+      mode: "real",
       publishedAt: new Date().toISOString(),
-      note: "内容已提交至B站专栏。请检查B站创作中心确认发布结果。"
+      currentUrl: page.url(),
+      note: "The submit action was clicked in Bilibili Creator Center. Check the creator center for final review status."
     };
-  } catch (err) {
-    // Save cookies even on error (they might still be valid)
-    try {
-      await saveCookies(page);
-    } catch {
-      // ignore
-    }
-    throw err;
   } finally {
-    await page.close();
+    if (loginPage && !loginPage.isClosed()) {
+      await loginPage.close().catch(() => {});
+      loginPage = null;
+    }
+    if (!keepPageOpen) {
+      await page.close().catch(() => {});
+    }
   }
+}
+
+async function fillFirst(page, selectors, text) {
+  for (const selector of selectors) {
+    const element = await page.$(selector).catch(() => null);
+    if (!element) {
+      continue;
+    }
+
+    await element.click({ clickCount: 3 }).catch(() => {});
+    await page.keyboard.down("Control");
+    await page.keyboard.press("KeyA");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+    await element.type(text, { delay: 1 });
+    return true;
+  }
+  return false;
+}
+
+async function clickButtonByText(page, labels) {
+  return page.evaluate((buttonLabels) => {
+    const candidates = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button']"));
+    const target = candidates.find((element) => {
+      const text = (element.textContent || "").replace(/\s+/g, "");
+      return buttonLabels.some((label) => text.includes(label));
+    });
+    if (!target) {
+      return false;
+    }
+    target.click();
+    return true;
+  }, labels);
 }

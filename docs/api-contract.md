@@ -1,111 +1,128 @@
-# API 契约草案
+# API 契约
 
-当前版本采用前端模拟发布。后续接入真实后端时，建议保持以下契约。
+当前版本已经包含真实发布后端。前端仍保留静态模拟发布能力；当 `GET /api/health` 可用且对应平台账号已连接时，`src/core/publisher.js` 会切换到真实发布路径。
 
-## 1. 创建发布任务
+## 1. 健康检查
 
-`POST /api/publish-jobs`
-
-请求：
+`GET /api/health`
 
 ```json
 {
-  "source": {
-    "title": "AI 工具如何提升多平台内容发布效率",
-    "body": "正文内容",
-    "tags": ["AI工具", "内容创作"],
-    "coverUrl": "https://example.com/cover.png",
-    "audience": "内容创作者",
-    "voice": "专业、清晰",
-    "cta": "欢迎收藏"
-  },
-  "targets": [
-    {
-      "platform": "wechat",
-      "title": "标题",
-      "body": "适配正文",
-      "tags": ["AI工具"],
-      "scheduleAt": "2026-05-30T10:00:00+08:00"
-    }
-  ]
+  "ok": true,
+  "name": "ContentBridge backend",
+  "version": "0.2.0",
+  "realPublish": ["wechat", "bilibili"]
 }
 ```
 
-响应：
+## 2. 凭证状态
+
+`GET /api/credentials`
+
+返回值只包含脱敏信息，后端不会把 `AppSecret` 返回给前端。
 
 ```json
-{
-  "jobId": "job_20260530_001",
-  "status": "queued",
-  "targets": [
-    {
-      "platform": "wechat",
-      "status": "queued"
-    }
-  ]
-}
-```
-
-## 2. 查询发布任务
-
-`GET /api/publish-jobs/:jobId`
-
-响应：
-
-```json
-{
-  "jobId": "job_20260530_001",
-  "status": "running",
-  "targets": [
-    {
-      "platform": "wechat",
-      "status": "success",
-      "remoteUrl": "https://example.com/post/1",
-      "publishedAt": "2026-05-30T10:00:00+08:00"
-    },
-    {
-      "platform": "rednote",
-      "status": "failed",
-      "reason": "封面图缺失"
-    }
-  ]
-}
-```
-
-## 3. 平台授权状态
-
-`GET /api/platform-auth`
-
-响应：
-
-```json
-{
-  "wechat": {
+[
+  {
+    "platform": "wechat",
+    "displayName": "WeChat Official Account",
     "connected": true,
-    "accountName": "示例公众号",
-    "expiresAt": "2026-06-30T00:00:00+08:00"
-  },
-  "zhihu": {
-    "connected": false,
-    "accountName": "",
-    "expiresAt": ""
+    "updatedAt": "2026-05-29T10:00:00.000Z",
+    "detail": {
+      "appId": "wx1234****",
+      "hasSecret": true,
+      "author": "ContentBridge",
+      "hasThumbMediaId": false,
+      "browserProfile": ""
+    }
   }
+]
+```
+
+## 3. 公众号凭证
+
+`POST /api/wechat/verify`
+
+```json
+{
+  "appId": "wx...",
+  "appSecret": "..."
 }
 ```
 
-## 4. 错误码
+`PUT /api/credentials/wechat`
 
-- `VALIDATION_ERROR`：内容未通过本地或服务端校验。
-- `AUTH_REQUIRED`：平台账号未授权。
-- `TOKEN_EXPIRED`：授权过期。
-- `PLATFORM_RATE_LIMITED`：平台接口限流。
-- `PLATFORM_REJECTED`：平台拒绝发布。
-- `UNKNOWN_ERROR`：未知错误。
+```json
+{
+  "appId": "wx...",
+  "appSecret": "...",
+  "author": "ContentBridge",
+  "thumbMediaId": "optional_permanent_media_id"
+}
+```
 
-## 5. 设计原则
+## 4. 公众号真实发布
 
-- 前端适配结果仍可作为发布任务输入。
-- 后端必须重新校验标题、正文、标签和封面。
-- 平台返回的错误要保留原始信息，方便用户修复。
-- 发布任务需要可重试，但不能重复发布同一平台内容。
+`POST /api/wechat/publish`
 
+```json
+{
+  "title": "标题",
+  "body": "# Markdown 正文",
+  "summary": "摘要",
+  "tags": ["AI", "效率"],
+  "coverUrl": "https://example.com/cover.jpg"
+}
+```
+
+成功：
+
+```json
+{
+  "status": "success",
+  "platform": "wechat",
+  "mode": "real",
+  "mediaId": "MEDIA_ID",
+  "publishId": "PUBLISH_ID",
+  "msgId": "",
+  "publishedAt": "2026-05-29T10:00:00.000Z"
+}
+```
+
+约束：
+
+- 需要认证公众号、有效 `AppID` / `AppSecret`、服务器 IP 白名单。
+- 微信草稿接口需要封面素材。可提供公开图片 URL，后端会上传为永久素材；也可提前保存 `thumb_media_id`。
+- 标题会按微信接口限制截断到 32 个字符。
+
+## 5. B 站浏览器登录与发布
+
+`POST /api/bilibili/login`
+
+打开本机浏览器登录页，扫码后登录态保存到 `backend/data/bilibili-profile`。
+
+`GET /api/bilibili/status`
+
+检测当前浏览器资料目录是否仍处于登录状态。
+
+`POST /api/bilibili/publish`
+
+```json
+{
+  "title": "标题",
+  "body": "正文",
+  "tags": ["AI", "效率"],
+  "coverUrl": ""
+}
+```
+
+B 站没有稳定的专栏发布开放 API，因此后端通过 Puppeteer 打开创作中心、填写标题和正文并点击发布按钮。若登录失效或页面结构变化，接口会返回 `login_required`、`manual_required` 或 `failed`，不会伪造成功。
+
+## 6. 错误码
+
+- `MISSING_WECHAT_CREDENTIALS`：公众号凭证未配置。
+- `MISSING_WECHAT_COVER`：公众号发布缺少封面素材。
+- `EMPTY_CONTENT`：标题或正文为空。
+- `login_required`：B 站需要扫码登录。
+- `manual_required`：内容已填写，但自动化无法安全点击发布按钮。
+- `PLATFORM_REJECTED`：平台接口拒绝请求，原始错误会保留在 `reason` 或 `error` 中。

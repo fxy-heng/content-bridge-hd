@@ -1,92 +1,119 @@
-import { addRoute, sendJson } from "../server.js";
+import { Router } from "express";
+import { getCredentials } from "../storage/credentials-store.js";
 import {
-  getAccessToken,
-  uploadImage,
   createDraft,
+  getPublishStatus,
   publishDraft,
+  uploadImage,
   verifyCredentials
 } from "../services/wechat-api.js";
-import { getCredentials } from "../storage/credentials-store.js";
 
-addRoute("POST", "/api/wechat/verify", async (req, res) => {
-  const { appId, appSecret } = req.body;
+const router = Router();
+
+router.post("/verify", async (req, res, next) => {
+  const { appId, appSecret } = req.body || {};
 
   if (!appId || !appSecret) {
-    sendJson(res, { ok: false, error: "请提供 AppID 和 AppSecret" }, 400);
+    res.status(400).json({ ok: false, code: "MISSING_WECHAT_CREDENTIALS", error: "AppID and AppSecret are required." });
     return;
   }
 
   try {
-    const result = await verifyCredentials(appId, appSecret);
-    sendJson(res, result);
-  } catch (err) {
-    sendJson(res, { ok: false, error: err.message }, 401);
+    res.json(await verifyCredentials(String(appId).trim(), String(appSecret).trim()));
+  } catch (error) {
+    error.status = 401;
+    next(error);
   }
 });
 
-addRoute("POST", "/api/wechat/publish", async (req, res) => {
-  const { title, body, summary, tags, coverUrl } = req.body;
-  const creds = getCredentials("wechat");
+router.post("/publish", async (req, res, next) => {
+  const { title = "", body = "", summary = "", coverUrl = "" } = req.body || {};
+  const credentials = getCredentials("wechat");
 
-  if (!creds || !creds.appId || !creds.appSecret) {
-    sendJson(res, {
+  if (!credentials?.appId || !credentials?.appSecret) {
+    res.status(400).json({
       status: "failed",
-      reason: "未配置公众号凭证，请在账号设置中配置 AppID 和 AppSecret"
-    }, 400);
+      platform: "wechat",
+      code: "MISSING_WECHAT_CREDENTIALS",
+      reason: "WeChat credentials are not configured."
+    });
+    return;
+  }
+
+  if (!title.trim() || !body.trim()) {
+    res.status(400).json({
+      status: "failed",
+      platform: "wechat",
+      code: "EMPTY_CONTENT",
+      reason: "Title and body are required."
+    });
     return;
   }
 
   try {
-    // Step 1: Upload cover image if provided
-    let thumbMediaId = "";
+    let thumbMediaId = credentials.thumbMediaId || "";
     if (coverUrl) {
-      try {
-        const result = await uploadImage(creds.appId, creds.appSecret, coverUrl);
-        thumbMediaId = result.mediaId;
-      } catch (err) {
-        // Cover image failure is non-fatal — continue without it
-        console.warn("Cover upload failed:", err.message);
-      }
+      const uploaded = await uploadImage(credentials.appId, credentials.appSecret, coverUrl);
+      thumbMediaId = uploaded.mediaId;
     }
 
-    // Step 2: Convert body to HTML if it's markdown
-    const article = {
-      title: title || "未命名内容",
-      body: body || "",
-      summary: summary || "",
-      author: creds.author || "",
-      thumbMediaId,
-      sourceUrl: ""
-    };
+    if (!thumbMediaId) {
+      res.status(422).json({
+        status: "failed",
+        platform: "wechat",
+        code: "MISSING_WECHAT_COVER",
+        reason: "WeChat official publishing requires a cover image URL or a saved thumb_media_id."
+      });
+      return;
+    }
 
-    // Step 3: Create draft
-    const mediaId = await createDraft(creds.appId, creds.appSecret, article);
+    const mediaId = await createDraft(credentials.appId, credentials.appSecret, {
+      title,
+      body,
+      summary,
+      author: credentials.author || "",
+      thumbMediaId
+    });
 
-    // Step 4: Publish the draft
-    const publishResult = await publishDraft(creds.appId, creds.appSecret, mediaId);
-
-    sendJson(res, {
+    const publishResult = await publishDraft(credentials.appId, credentials.appSecret, mediaId);
+    res.json({
       status: "success",
       platform: "wechat",
+      mode: "real",
       mediaId,
       publishId: publishResult.publishId,
       msgId: publishResult.msgId,
       publishedAt: new Date().toISOString()
     });
-  } catch (err) {
-    sendJson(res, {
-      status: "failed",
-      platform: "wechat",
-      reason: err.message
-    }, 500);
+  } catch (error) {
+    error.status = 502;
+    next(error);
   }
 });
 
-addRoute("GET", "/api/wechat/status", (req, res) => {
-  const creds = getCredentials("wechat");
-  sendJson(res, {
+router.get("/status", (req, res) => {
+  const credentials = getCredentials("wechat");
+  res.json({
     platform: "wechat",
-    connected: Boolean(creds && creds.appId && creds.appSecret),
-    maskAppId: creds ? creds.appId.slice(0, 6) + "****" : ""
+    connected: Boolean(credentials?.appId && credentials?.appSecret),
+    hasThumbMediaId: Boolean(credentials?.thumbMediaId),
+    appId: credentials?.appId ? `${credentials.appId.slice(0, 6)}****` : ""
   });
 });
+
+router.get("/publish/:publishId", async (req, res, next) => {
+  const credentials = getCredentials("wechat");
+  if (!credentials?.appId || !credentials?.appSecret) {
+    res.status(400).json({ ok: false, code: "MISSING_WECHAT_CREDENTIALS", error: "WeChat credentials are not configured." });
+    return;
+  }
+
+  try {
+    res.json(await getPublishStatus(credentials.appId, credentials.appSecret, req.params.publishId));
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+export default router;

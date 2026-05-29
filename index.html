@@ -15,7 +15,7 @@
         <div>
           <p class="eyebrow">ContentBridge</p>
           <h1>多平台内容发布工作台</h1>
-          <p class="subtitle">一份原始内容，自动适配公众号、知乎、B站、小红书，并完成模拟发布。</p>
+          <p class="subtitle">一份原始内容，自动适配公众号、知乎、B站、小红书；有后端凭证时走真实发布，没有凭证时保留模拟发布。</p>
         </div>
         <div class="metric-row">
           <div>
@@ -151,6 +151,10 @@
                 <input id="wechatAppSecret" type="password" placeholder="请输入 AppSecret" />
               </label>
               <label>
+                公众号 thumb_media_id（选填）
+                <input id="wechatThumbMediaId" placeholder="已有永久封面素材时填写；否则发布时使用封面图 URL 自动上传" />
+              </label>
+              <label>
                 作者名称（选填）
                 <input id="wechatAuthor" placeholder="文章作者署名" />
               </label>
@@ -158,7 +162,12 @@
               <button type="button" id="saveWechatCreds">保存并验证</button>
               <button type="button" id="removeWechatCreds">删除凭证</button>
             </div>
-            <p class="account-note">B站通过浏览器自动化发布，需要在启动后端服务的电脑上登录 B站后使用。</p>
+            <div class="account-form account-section">
+              <div class="account-status disconnected" id="bilibiliStatus">B站未检测</div>
+              <button type="button" id="openBilibiliLogin">打开 B站扫码登录</button>
+              <button type="button" id="refreshBilibiliStatus">刷新 B站登录态</button>
+            </div>
+            <p class="account-note">B站通过本机浏览器资料目录保存登录态。第一次使用请先启动后端，再扫码登录。</p>
           </details>
 
           <div class="actions">

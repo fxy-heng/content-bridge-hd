@@ -1,92 +1,62 @@
-import { createServer } from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, join, normalize, dirname } from "node:path";
+import express from "express";
+import cors from "cors";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import credentialsRouter from "./routes/credentials.js";
+import wechatRouter from "./routes/wechat.js";
+import bilibiliRouter from "./routes/bilibili.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, "..");
-const port = Number(process.env.PORT || 5173);
+export const root = join(__dirname, "..");
+export const dataRoot = join(__dirname, "data");
 
-const contentTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".webmanifest": "application/manifest+json; charset=utf-8"
-};
+export function createApp() {
+  const app = express();
 
-const apiRoutes = {};
+  app.use(cors());
+  app.use(express.json({ limit: "2mb" }));
 
-function addRoute(method, path, handler) {
-  apiRoutes[`${method}:${path}`] = handler;
-}
-
-function parseBody(request) {
-  return new Promise((resolve) => {
-    let body = "";
-    request.on("data", (chunk) => (body += chunk));
-    request.on("end", () => {
-      try {
-        resolve(JSON.parse(body || "{}"));
-      } catch {
-        resolve(null);
-      }
+  app.get("/api/health", (req, res) => {
+    res.json({
+      ok: true,
+      name: "ContentBridge backend",
+      version: "0.2.0",
+      realPublish: ["wechat", "bilibili"]
     });
   });
-}
 
-function sendJson(response, data, status = 200) {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
-  response.end(JSON.stringify(data));
-}
+  app.use("/api/credentials", credentialsRouter);
+  app.use("/api/wechat", wechatRouter);
+  app.use("/api/bilibili", bilibiliRouter);
 
-// Health check
-addRoute("GET", "/api/health", (req, res) => {
-  sendJson(res, { ok: true, version: "0.1.0" });
-});
-
-// Import route modules
-import("./routes/wechat.js");
-import("./routes/bilibili.js");
-import("./routes/credentials.js");
-
-createServer(async (request, response) => {
-  const url = new URL(request.url || "/", `http://localhost:${port}`);
-  const pathname = decodeURIComponent(url.pathname);
-
-  // API routes
-  const routeKey = `${request.method}:${pathname}`;
-  if (apiRoutes[routeKey]) {
-    try {
-      const body = request.method === "POST" || request.method === "PUT" ? await parseBody(request) : {};
-      request.body = body;
-      request.query = Object.fromEntries(url.searchParams);
-      await apiRoutes[routeKey](request, response);
-    } catch (err) {
-      console.error(err);
-      sendJson(response, { error: err.message || "Internal error" }, 500);
+  app.use(express.static(root, {
+    extensions: ["html"],
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".webmanifest")) {
+        res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+      }
     }
-    return;
-  }
+  }));
 
-  // Static file serving
-  const requested = pathname === "/" ? "/index.html" : pathname;
-  const filePath = normalize(join(root, requested));
-
-  if (!filePath.startsWith(root) || !existsSync(filePath) || !statSync(filePath).isFile()) {
-    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Not found");
-    return;
-  }
-
-  response.writeHead(200, {
-    "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream"
+  app.use((req, res) => {
+    res.status(404).json({ ok: false, error: "Not found" });
   });
-  createReadStream(filePath).pipe(response);
-}).listen(port, () => {
-  console.log(`ContentBridge is running at http://localhost:${port}`);
-});
 
-export { addRoute, sendJson, root };
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(err.status || 500).json({
+      ok: false,
+      error: err.message || "Internal server error"
+    });
+  });
+
+  return app;
+}
+
+const currentFile = fileURLToPath(import.meta.url);
+if (process.argv[1] === currentFile) {
+  const port = Number(process.env.PORT || 5173);
+  createApp().listen(port, () => {
+    console.log(`ContentBridge backend is running at http://localhost:${port}`);
+  });
+}

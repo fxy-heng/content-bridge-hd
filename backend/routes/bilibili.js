@@ -1,42 +1,52 @@
-import { addRoute, sendJson } from "../server.js";
-import { publishArticle, checkLoginStatus } from "../services/bilibili-browser.js";
+import { Router } from "express";
+import { checkLoginStatus, openLoginPage, publishArticle } from "../services/bilibili-browser.js";
 
-addRoute("POST", "/api/bilibili/publish", async (req, res) => {
-  const { title, body, tags, coverUrl } = req.body;
+const router = Router();
 
-  if (!title || !body) {
-    sendJson(res, {
+router.post("/login", async (req, res, next) => {
+  try {
+    res.json(await openLoginPage());
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+router.get("/status", async (req, res, next) => {
+  try {
+    const status = await checkLoginStatus();
+    res.json({
+      platform: "bilibili",
+      connected: status.loggedIn,
+      ...status
+    });
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+router.post("/publish", async (req, res, next) => {
+  const { title = "", body = "", tags = [], coverUrl = "" } = req.body || {};
+
+  if (!title.trim() || !body.trim()) {
+    res.status(400).json({
       status: "failed",
-      reason: "标题和正文不能为空"
-    }, 400);
+      platform: "bilibili",
+      code: "EMPTY_CONTENT",
+      reason: "Title and body are required."
+    });
     return;
   }
 
   try {
     const result = await publishArticle({ title, body, tags, coverUrl });
-    sendJson(res, result);
-  } catch (err) {
-    sendJson(res, {
-      status: "failed",
-      platform: "bilibili",
-      reason: err.message
-    }, 500);
+    const status = result.status === "login_required" ? 409 : 200;
+    res.status(status).json(result);
+  } catch (error) {
+    error.status = 502;
+    next(error);
   }
 });
 
-addRoute("GET", "/api/bilibili/status", async (req, res) => {
-  try {
-    const status = await checkLoginStatus();
-    sendJson(res, {
-      platform: "bilibili",
-      connected: status.loggedIn,
-      ...status
-    });
-  } catch (err) {
-    sendJson(res, {
-      platform: "bilibili",
-      connected: false,
-      error: err.message
-    });
-  }
-});
+export default router;

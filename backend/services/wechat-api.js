@@ -1,12 +1,11 @@
 const WECHAT_API = "https://api.weixin.qq.com";
-
 const tokenCache = new Map();
 
 export async function getAccessToken(appId, appSecret) {
-  const cacheKey = `${appId}`;
+  const cacheKey = appId;
   const cached = tokenCache.get(cacheKey);
 
-  if (cached && cached.expiresAt > Date.now() + 60000) {
+  if (cached && cached.expiresAt > Date.now() + 60_000) {
     return cached.token;
   }
 
@@ -14,44 +13,49 @@ export async function getAccessToken(appId, appSecret) {
   const response = await fetch(url);
   const data = await response.json();
 
-  if (data.errcode) {
-    throw new Error(`微信 access_token 获取失败: [${data.errcode}] ${data.errmsg}`);
+  if (!response.ok || data.errcode) {
+    throw new Error(formatWechatError("access_token request failed", data));
   }
 
   tokenCache.set(cacheKey, {
     token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000
+    expiresAt: Date.now() + Number(data.expires_in || 7200) * 1000
   });
 
   return data.access_token;
 }
 
-export async function uploadImage(appId, appSecret, imageUrl) {
+export async function verifyCredentials(appId, appSecret) {
   const token = await getAccessToken(appId, appSecret);
+  return {
+    ok: true,
+    platform: "wechat",
+    tokenPrefix: `${token.slice(0, 8)}...`
+  };
+}
 
-  // If it's a URL, fetch the image first
-  let buffer;
-  let contentType;
-  let filename;
-
-  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-    try {
-      const imageResponse = await fetch(imageUrl);
-      buffer = Buffer.from(await imageResponse.arrayBuffer());
-      contentType = imageResponse.headers.get("content-type") || "image/png";
-      const ext = contentType.includes("jpeg") || contentType.includes("jpg") ? "jpg" : "png";
-      filename = `cover.${ext}`;
-    } catch {
-      throw new Error("封面图下载失败，请检查图片地址是否可访问");
-    }
-  } else {
-    // Local path — read file
-    throw new Error("暂不支持本地文件路径上传，请提供可访问的图片 URL");
+export async function uploadImage(appId, appSecret, imageUrl) {
+  if (!/^https?:\/\//i.test(imageUrl)) {
+    throw new Error("Cover image must be a public HTTP or HTTPS URL.");
   }
 
-  const boundary = `----FormBoundary${Date.now()}`;
+  const token = await getAccessToken(appId, appSecret);
+  const imageResponse = await fetch(imageUrl);
+
+  if (!imageResponse.ok) {
+    throw new Error(`Cover image download failed: HTTP ${imageResponse.status}.`);
+  }
+
+  const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`Cover URL must return an image content type, got ${contentType}.`);
+  }
+
+  const buffer = Buffer.from(await imageResponse.arrayBuffer());
+  const extension = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+  const boundary = `----ContentBridge${Date.now()}`;
   const body = Buffer.concat([
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="media"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="media"; filename="cover.${extension}"\r\nContent-Type: ${contentType}\r\n\r\n`),
     buffer,
     Buffer.from(`\r\n--${boundary}--\r\n`)
   ]);
@@ -65,26 +69,28 @@ export async function uploadImage(appId, appSecret, imageUrl) {
     },
     body
   });
-
   const data = await response.json();
-  if (data.errcode) {
-    throw new Error(`微信图片上传失败: [${data.errcode}] ${data.errmsg}`);
+
+  if (!response.ok || data.errcode) {
+    throw new Error(formatWechatError("cover upload failed", data));
   }
 
-  return { mediaId: data.media_id, url: data.url };
+  return {
+    mediaId: data.media_id,
+    url: data.url
+  };
 }
 
 export async function createDraft(appId, appSecret, article) {
   const token = await getAccessToken(appId, appSecret);
-
   const payload = {
     articles: [{
       article_type: "news",
-      title: article.title.slice(0, 32),
-      author: article.author || "",
-      digest: article.summary ? article.summary.slice(0, 128) : article.title.slice(0, 54),
-      content: typeof article.content === "string" ? article.content : markdownToWechatHtml(article.body || ""),
-      content_source_url: article.sourceUrl || "",
+      title: normalizeText(article.title).slice(0, 32),
+      author: normalizeText(article.author).slice(0, 8),
+      digest: normalizeText(article.summary || article.title).slice(0, 120),
+      content: markdownToWechatHtml(article.body || ""),
+      content_source_url: "",
       thumb_media_id: article.thumbMediaId,
       need_open_comment: 1,
       only_fans_can_comment: 0
@@ -97,10 +103,10 @@ export async function createDraft(appId, appSecret, article) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-
   const data = await response.json();
-  if (data.errcode) {
-    throw new Error(`微信草稿创建失败: [${data.errcode}] ${data.errmsg}`);
+
+  if (!response.ok || data.errcode) {
+    throw new Error(formatWechatError("draft creation failed", data));
   }
 
   return data.media_id;
@@ -108,57 +114,101 @@ export async function createDraft(appId, appSecret, article) {
 
 export async function publishDraft(appId, appSecret, mediaId) {
   const token = await getAccessToken(appId, appSecret);
-
   const url = `${WECHAT_API}/cgi-bin/freepublish/submit?access_token=${encodeURIComponent(token)}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ media_id: mediaId })
   });
-
   const data = await response.json();
-  if (data.errcode) {
-    // publish_msg_id 带 errcode=0 是成功
-    if (data.publish_id) {
-      return { publishId: String(data.publish_id), msgId: data.msg_data_id ? String(data.msg_data_id) : "" };
-    }
-    throw new Error(`微信发布失败: [${data.errcode}] ${data.errmsg}`);
+
+  if (!response.ok || data.errcode) {
+    throw new Error(formatWechatError("publish submit failed", data));
   }
 
-  return { publishId: String(data.publish_id || ""), msgId: data.msg_data_id ? String(data.msg_data_id) : "" };
+  return {
+    publishId: String(data.publish_id || ""),
+    msgId: data.msg_data_id ? String(data.msg_data_id) : ""
+  };
 }
 
-export async function verifyCredentials(appId, appSecret) {
+export async function getPublishStatus(appId, appSecret, publishId) {
   const token = await getAccessToken(appId, appSecret);
-  return { ok: true, tokenPrefix: token.slice(0, 8) + "..." };
+  const url = `${WECHAT_API}/cgi-bin/freepublish/get?access_token=${encodeURIComponent(token)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ publish_id: publishId })
+  });
+  const data = await response.json();
+
+  if (!response.ok || data.errcode) {
+    throw new Error(formatWechatError("publish status request failed", data));
+  }
+
+  return data;
 }
 
-function markdownToWechatHtml(md) {
-  let html = String(md);
-  // Headings
-  html = html.replace(/^### (.+)$/gm, '<h3 style="font-size:18px;font-weight:700;margin:20px 0 10px;">$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:20px;font-weight:700;margin:24px 0 12px;">$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1 style="font-size:22px;font-weight:700;margin:28px 0 14px;">$1</h1>');
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Lists
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul style="padding-left:20px;margin:10px 0;">${match}</ul>`);
-  // Numbered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  // Paragraphs — wrap non-tag lines in <p>
-  html = html
-    .split("\n\n")
-    .map((block) => {
-      const trimmed = block.trim();
-      if (!trimmed) return "";
-      if (trimmed.startsWith("<")) return trimmed;
-      return `<p style="line-height:1.8;margin:10px 0;">${trimmed}</p>`;
-    })
-    .join("\n");
+export function markdownToWechatHtml(markdown) {
+  const blocks = String(markdown)
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
 
-  return html;
+  return blocks.map((block) => {
+    if (/^###\s+/.test(block)) {
+      return `<h3 style="font-size:18px;font-weight:700;margin:20px 0 10px;">${inlineMarkdown(block.replace(/^###\s+/, ""))}</h3>`;
+    }
+    if (/^##\s+/.test(block)) {
+      return `<h2 style="font-size:20px;font-weight:700;margin:24px 0 12px;">${inlineMarkdown(block.replace(/^##\s+/, ""))}</h2>`;
+    }
+    if (/^#\s+/.test(block)) {
+      return `<h1 style="font-size:22px;font-weight:700;margin:28px 0 14px;">${inlineMarkdown(block.replace(/^#\s+/, ""))}</h1>`;
+    }
+    if (/^(-|\*)\s+/m.test(block)) {
+      const items = block
+        .split("\n")
+        .map((line) => line.replace(/^(-|\*)\s+/, "").trim())
+        .filter(Boolean)
+        .map((line) => `<li>${inlineMarkdown(line)}</li>`)
+        .join("");
+      return `<ul style="padding-left:20px;margin:12px 0;line-height:1.8;">${items}</ul>`;
+    }
+    if (/^\d+\.\s+/m.test(block)) {
+      const items = block
+        .split("\n")
+        .map((line) => line.replace(/^\d+\.\s+/, "").trim())
+        .filter(Boolean)
+        .map((line) => `<li>${inlineMarkdown(line)}</li>`)
+        .join("");
+      return `<ol style="padding-left:20px;margin:12px 0;line-height:1.8;">${items}</ol>`;
+    }
+    return `<p style="font-size:16px;line-height:1.8;margin:12px 0;">${inlineMarkdown(block).replace(/\n/g, "<br />")}</p>`;
+  }).join("\n");
 }
 
-// Expose for route use
-export { markdownToWechatHtml };
+function inlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`(.+?)`/g, "<code>$1</code>");
+}
+
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatWechatError(prefix, data = {}) {
+  const code = data.errcode ?? "unknown";
+  const message = data.errmsg || JSON.stringify(data);
+  return `WeChat ${prefix}: [${code}] ${message}`;
+}

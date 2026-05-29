@@ -1,22 +1,42 @@
-let backendAvailable = null;
+let backendCache = null;
 
-async function checkBackend() {
-  if (backendAvailable !== null) {
-    return backendAvailable;
+async function getBackendState() {
+  if (backendCache && backendCache.expiresAt > Date.now()) {
+    return backendCache.value;
   }
+
+  const fallback = { available: false, realPlatforms: new Set(), credentials: [] };
   try {
-    const response = await fetch("/api/health");
-    const data = await response.json();
-    backendAvailable = data.ok === true;
+    const healthResponse = await fetch("/api/health");
+    const health = await healthResponse.json();
+    if (!health.ok) {
+      return fallback;
+    }
+
+    const credentialsResponse = await fetch("/api/credentials");
+    const credentials = credentialsResponse.ok ? await credentialsResponse.json() : [];
+    const realPlatforms = new Set(
+      credentials
+        .filter((item) => item.connected)
+        .map((item) => item.platform)
+    );
+
+    // Bilibili uses a persisted browser profile rather than static credentials.
+    // When the backend is running, the real publish path can report login_required
+    // and open the QR-login flow instead of silently pretending a publish worked.
+    realPlatforms.add("bilibili");
+
+    const value = { available: true, realPlatforms, credentials };
+    backendCache = { value, expiresAt: Date.now() + 5000 };
+    return value;
   } catch {
-    backendAvailable = false;
+    return fallback;
   }
-  return backendAvailable;
 }
 
 export async function publishToPlatforms(adaptedItems, options = {}) {
   const now = options.now || new Date();
-  const backend = await checkBackend();
+  const backend = await getBackendState();
   const failurePlatforms = new Set(options.failurePlatforms || []);
 
   const results = await Promise.all(
@@ -26,26 +46,32 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
       const failed = hasValidationError || failurePlatforms.has(item.platform);
 
       if (failed) {
-        return buildResult(item, index, now, "failed", hasValidationError ? firstFailureReason(item) : "模拟发布失败，请检查平台授权或内容限制");
+        return buildResult(
+          item,
+          index,
+          now,
+          "failed",
+          hasValidationError ? firstFailureReason(item) : "Simulated publish failed. Check platform authorization or content limits.",
+          null,
+          "simulated"
+        );
       }
 
       if (scheduled) {
-        return buildResult(item, index, now, "scheduled", "已进入模拟排期队列");
+        return buildResult(item, index, now, "scheduled", "Added to the simulated scheduling queue.", null, "simulated");
       }
 
-      // Try real publishing if backend is available and platform supports it
-      if (backend && supportsRealPublish(item.platform)) {
+      if (backend.available && supportsRealPublish(item.platform) && backend.realPlatforms.has(item.platform)) {
         try {
           const realResult = await realPublish(item);
-          return buildResult(item, index, now, realResult.status, realResult.reason || "", realResult.detail);
+          const status = realResult.status === "success" ? "success" : "failed";
+          return buildResult(item, index, now, status, realResult.reason || "", realResult.detail, "real");
         } catch (err) {
-          // Fall back to simulated success on network errors
           console.warn(`Real publish failed for ${item.platform}, using simulation:`, err.message);
         }
       }
 
-      // Fallback: simulated publish
-      return buildResult(item, index, now, "success", "");
+      return buildResult(item, index, now, "success", "", null, "simulated");
     })
   );
 
@@ -53,8 +79,6 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
 }
 
 function supportsRealPublish(platform) {
-  // Only wechat and bilibili have real publish backends
-  // zhihu and rednote don't have public APIs
   return platform === "wechat" || platform === "bilibili";
 }
 
@@ -84,13 +108,13 @@ async function realPublish(item) {
   }
 
   return {
-    status: "failed",
-    reason: data.reason || "发布失败",
+    status: data.status || "failed",
+    reason: data.reason || data.error || "Real publish failed.",
     detail: data
   };
 }
 
-function buildResult(item, index, now, status, reason = "", detail = null) {
+function buildResult(item, index, now, status, reason = "", detail = null, mode = "simulated") {
   return {
     id: `${now.getTime()}-${index}-${item.platform}`,
     platform: item.platform,
@@ -100,6 +124,7 @@ function buildResult(item, index, now, status, reason = "", detail = null) {
     reason,
     scheduledAt: item.scheduleAt || "",
     publishedAt: new Date(now.getTime() + index * 1000).toISOString(),
+    mode,
     detail
   };
 }
@@ -114,5 +139,5 @@ function isFutureSchedule(scheduleAt, now) {
 
 function firstFailureReason(item) {
   const error = item.validation?.issues?.find((issue) => issue.level === "error");
-  return error?.message || "模拟发布失败，请检查平台授权或内容限制";
+  return error?.message || "Simulated publish failed. Check platform authorization or content limits.";
 }

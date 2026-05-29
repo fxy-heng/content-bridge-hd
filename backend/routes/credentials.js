@@ -1,58 +1,74 @@
-import { addRoute, sendJson } from "../server.js";
+import { Router } from "express";
 import {
-  getCredentials,
-  saveCredentials,
   deleteCredentials,
-  listCredentials
+  getCredentials,
+  listCredentialSummaries,
+  saveCredentials,
+  summarizeCredentials
 } from "../storage/credentials-store.js";
 
-addRoute("GET", "/api/credentials", (req, res) => {
-  const list = listCredentials();
-  // Mask sensitive data
-  const masked = list.map((item) => {
-    const creds = getCredentials(item.platform);
-    return {
-      platform: item.platform,
-      displayName: item.displayName,
-      connected: item.hasCredentials,
-      updatedAt: item.updatedAt,
+const router = Router();
+
+router.get("/", (req, res) => {
+  const summaries = listCredentialSummaries();
+  const platforms = new Map(summaries.map((item) => [item.platform, item]));
+
+  if (!platforms.has("wechat")) {
+    platforms.set("wechat", summarizeCredentials("wechat", null));
+  }
+  if (!platforms.has("bilibili")) {
+    platforms.set("bilibili", {
+      platform: "bilibili",
+      displayName: "Bilibili",
+      connected: false,
+      updatedAt: "",
       detail: {
-        appId: creds?.appId ? creds.appId.slice(0, 6) + "****" : "",
-        hasSecret: Boolean(creds?.appSecret),
-        author: creds?.author || ""
+        appId: "",
+        hasSecret: false,
+        author: "",
+        hasThumbMediaId: false,
+        browserProfile: ""
       }
-    };
-  });
-  sendJson(res, masked);
+    });
+  }
+
+  res.json([...platforms.values()]);
 });
 
-addRoute("PUT", "/api/credentials/wechat", (req, res) => {
-  const { appId, appSecret, author } = req.body;
+router.get("/:platform", (req, res) => {
+  res.json(summarizeCredentials(req.params.platform));
+});
+
+router.put("/wechat", (req, res) => {
+  const { appId, appSecret, author = "", thumbMediaId = "" } = req.body || {};
 
   if (!appId || !appSecret) {
-    sendJson(res, { ok: false, error: "请提供 AppID 和 AppSecret" }, 400);
+    res.status(400).json({ ok: false, code: "MISSING_WECHAT_CREDENTIALS", error: "AppID and AppSecret are required." });
     return;
   }
 
-  saveCredentials("wechat", {
-    displayName: "公众号",
-    appId,
-    appSecret,
-    author: author || ""
+  const saved = saveCredentials("wechat", {
+    displayName: "WeChat Official Account",
+    appId: String(appId).trim(),
+    appSecret: String(appSecret).trim(),
+    author: String(author).trim(),
+    thumbMediaId: String(thumbMediaId).trim()
   });
 
-  sendJson(res, { ok: true, platform: "wechat" });
+  res.json({ ok: true, credential: summarizeCredentials("wechat", saved) });
 });
 
-addRoute("DELETE", "/api/credentials/wechat", (req, res) => {
+router.delete("/wechat", (req, res) => {
   deleteCredentials("wechat");
-  sendJson(res, { ok: true });
+  res.json({ ok: true });
 });
 
-addRoute("GET", "/api/credentials/wechat/status", (req, res) => {
-  const creds = getCredentials("wechat");
-  sendJson(res, {
+router.get("/wechat/status", (req, res) => {
+  const credentials = getCredentials("wechat");
+  res.json({
     platform: "wechat",
-    connected: Boolean(creds && creds.appId && creds.appSecret)
+    connected: Boolean(credentials?.appId && credentials?.appSecret)
   });
 });
+
+export default router;

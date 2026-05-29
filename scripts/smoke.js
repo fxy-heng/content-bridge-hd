@@ -44,6 +44,8 @@ assertIncludes(html, "platformChoices", "platform selection container");
 assertIncludes(html, "manifest.webmanifest", "PWA manifest");
 assertIncludes(html, "readinessGrid", "readiness dashboard");
 assertIncludes(html, "templateSelect", "template selector");
+assertIncludes(html, "wechatThumbMediaId", "WeChat thumb media field");
+assertIncludes(html, "openBilibiliLogin", "Bilibili login button");
 assertIncludes(app, "adaptForPlatforms", "adapter workflow");
 assertIncludes(app, "buildPublishingStrategy", "strategy workflow");
 assertIncludes(app, "buildScheduleCalendar", "calendar export workflow");
@@ -52,8 +54,11 @@ assertIncludes(app, "parseMarkdownDraft", "markdown import workflow");
 assertIncludes(app, "createSnapshot", "snapshot workflow");
 assertIncludes(app, "exportPlatformPreset", "platform preset workflow");
 assertIncludes(app, "buildPlatformRulesMarkdown", "platform rules export workflow");
+assertIncludes(app, "openBilibiliLogin", "Bilibili login workflow");
+assertIncludes(app, "mode === \"real\"", "real publish log marker");
 assertIncludes(readme, "npm start", "startup command");
 assertIncludes(readme, "npm test", "test command");
+assertIncludes(readme, "thumb_media_id", "WeChat real publish prerequisite");
 
 console.log("ok - smoke checks passed");
 

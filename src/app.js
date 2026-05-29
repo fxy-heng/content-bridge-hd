@@ -86,10 +86,14 @@ const elements = {
   customCover: document.querySelector("#customCover"),
   wechatAppId: document.querySelector("#wechatAppId"),
   wechatAppSecret: document.querySelector("#wechatAppSecret"),
+  wechatThumbMediaId: document.querySelector("#wechatThumbMediaId"),
   wechatAuthor: document.querySelector("#wechatAuthor"),
   wechatStatus: document.querySelector("#wechatStatus"),
   saveWechatCreds: document.querySelector("#saveWechatCreds"),
-  removeWechatCreds: document.querySelector("#removeWechatCreds")
+  removeWechatCreds: document.querySelector("#removeWechatCreds"),
+  bilibiliStatus: document.querySelector("#bilibiliStatus"),
+  openBilibiliLogin: document.querySelector("#openBilibiliLogin"),
+  refreshBilibiliStatus: document.querySelector("#refreshBilibiliStatus")
 };
 
 elements.adaptButton.addEventListener("click", adaptCurrentContent);
@@ -121,6 +125,8 @@ elements.exportRules.addEventListener("click", exportPlatformRules);
 elements.resetPlatforms.addEventListener("click", resetCustomPlatforms);
 elements.saveWechatCreds.addEventListener("click", saveWechatCredentials);
 elements.removeWechatCreds.addEventListener("click", removeWechatCredentials);
+elements.openBilibiliLogin.addEventListener("click", openBilibiliLogin);
+elements.refreshBilibiliStatus.addEventListener("click", refreshBilibiliStatus);
 
 sourceInputs().forEach((input) => {
   input.addEventListener("input", debounce(() => {
@@ -209,7 +215,7 @@ async function publishCurrentContent() {
     const successCount = results.filter((item) => item.status === "success").length;
     const failedCount = results.filter((item) => item.status === "failed").length;
 
-    const realCount = results.filter((item) => item.detail).length;
+    const realCount = results.filter((item) => item.mode === "real").length;
     const realNote = realCount ? ` (${realCount} 个真实发布)` : " (模拟)";
     elements.summaryText.textContent = `已处理 ${results.length} 个平台：成功 ${successCount}，排期 ${scheduledCount}，失败 ${failedCount}${realNote}`;
   } finally {
@@ -709,7 +715,7 @@ async function loadCredentialStatus() {
     if (wechat && wechat.connected) {
       elements.wechatAppId.value = wechat.detail.appId || "";
       elements.wechatAuthor.value = wechat.detail.author || "";
-      setWechatStatus("connected", "已连接");
+      setWechatStatus("connected", wechat.detail.hasThumbMediaId ? "已连接，已配置封面素材" : "已连接，发布时需要封面图 URL");
     } else {
       setWechatStatus("disconnected", "未配置");
     }
@@ -721,6 +727,7 @@ async function loadCredentialStatus() {
 async function saveWechatCredentials() {
   const appId = elements.wechatAppId.value.trim();
   const appSecret = elements.wechatAppSecret.value.trim();
+  const thumbMediaId = elements.wechatThumbMediaId.value.trim();
   const author = elements.wechatAuthor.value.trim();
 
   if (!appId || !appSecret) {
@@ -729,11 +736,23 @@ async function saveWechatCredentials() {
   }
 
   try {
-    // Save credentials
+    setWechatStatus("disconnected", "正在验证...");
+    const verifyResponse = await fetch("/api/wechat/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appId, appSecret })
+    });
+
+    const verifyData = await verifyResponse.json();
+    if (!verifyData.ok) {
+      setWechatStatus("disconnected", `验证失败: ${verifyData.error || "凭证不可用"}`);
+      return;
+    }
+
     const saveResponse = await fetch("/api/credentials/wechat", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appId, appSecret, author })
+      body: JSON.stringify({ appId, appSecret, author, thumbMediaId })
     });
 
     if (!saveResponse.ok) {
@@ -742,20 +761,8 @@ async function saveWechatCredentials() {
       return;
     }
 
-    // Verify by calling the verify endpoint
-    const verifyResponse = await fetch("/api/wechat/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appId, appSecret })
-    });
-
-    const verifyData = await verifyResponse.json();
-    if (verifyData.ok) {
-      setWechatStatus("connected", "凭证有效，已保存");
-      elements.wechatAppSecret.value = "";
-    } else {
-      setWechatStatus("disconnected", `验证失败: ${verifyData.error}`);
-    }
+    setWechatStatus("connected", "凭证有效，已保存");
+    elements.wechatAppSecret.value = "";
   } catch (err) {
     setWechatStatus("disconnected", `连接失败: ${err.message}`);
   }
@@ -766,6 +773,7 @@ async function removeWechatCredentials() {
     await fetch("/api/credentials/wechat", { method: "DELETE" });
     elements.wechatAppId.value = "";
     elements.wechatAppSecret.value = "";
+    elements.wechatThumbMediaId.value = "";
     elements.wechatAuthor.value = "";
     setWechatStatus("disconnected", "未配置");
   } catch {
@@ -773,9 +781,40 @@ async function removeWechatCredentials() {
   }
 }
 
+async function openBilibiliLogin() {
+  setBilibiliStatus("disconnected", "正在打开 B 站登录窗口...");
+  try {
+    const response = await fetch("/api/bilibili/login", { method: "POST" });
+    const data = await response.json();
+    if (data.ok) {
+      setBilibiliStatus("connected", "请在打开的浏览器窗口扫码登录，然后刷新状态");
+    } else {
+      setBilibiliStatus("disconnected", data.error || "登录窗口打开失败");
+    }
+  } catch (err) {
+    setBilibiliStatus("disconnected", `后端连接失败: ${err.message}`);
+  }
+}
+
+async function refreshBilibiliStatus() {
+  setBilibiliStatus("disconnected", "正在检测登录态...");
+  try {
+    const response = await fetch("/api/bilibili/status");
+    const data = await response.json();
+    setBilibiliStatus(data.connected ? "connected" : "disconnected", data.connected ? "已登录，可尝试真实发布" : "未登录或登录已失效");
+  } catch (err) {
+    setBilibiliStatus("disconnected", `检测失败: ${err.message}`);
+  }
+}
+
 function setWechatStatus(className, message) {
   elements.wechatStatus.className = `account-status ${className}`;
   elements.wechatStatus.textContent = message;
+}
+
+function setBilibiliStatus(className, message) {
+  elements.bilibiliStatus.className = `account-status ${className}`;
+  elements.bilibiliStatus.textContent = message;
 }
 
 function loadJson(key, fallback) {
