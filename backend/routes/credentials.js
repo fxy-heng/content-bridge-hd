@@ -4,6 +4,7 @@ import {
   getCredentials,
   listCredentialSummaries,
   saveCredentials,
+  getCredentialStorePath,
   summarizeCredentials
 } from "../storage/credentials-store.js";
 
@@ -33,6 +34,13 @@ router.get("/", (req, res) => {
   }
 
   res.json([...platforms.values()]);
+});
+
+router.get("/store", (req, res) => {
+  res.json({
+    ok: true,
+    path: getCredentialStorePath()
+  });
 });
 
 router.get("/:platform", (req, res) => {

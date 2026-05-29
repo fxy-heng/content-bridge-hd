@@ -3,17 +3,35 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const credentialsFile = join(__dirname, "..", "data", "credentials.json");
+const projectCredentialsFile = join(__dirname, "..", "data", "credentials.json");
+const appDataRoot = process.env.LOCALAPPDATA || process.env.APPDATA || join(process.env.USERPROFILE || process.cwd(), "AppData", "Local");
+const credentialsFile = process.env.CONTENTBRIDGE_CREDENTIALS_FILE || join(appDataRoot, "ContentBridge", "credentials.json");
 
 function readAll() {
   try {
     if (!existsSync(credentialsFile)) {
-      writeAll({});
+      const legacy = readLegacyCredentials();
+      if (Object.keys(legacy).length) {
+        writeAll(legacy);
+        return legacy;
+      }
       return {};
     }
     const text = readFileSync(credentialsFile, "utf8");
     return text.trim() ? JSON.parse(text) : {};
   } catch (error) {
+    return {};
+  }
+}
+
+function readLegacyCredentials() {
+  try {
+    if (!existsSync(projectCredentialsFile)) {
+      return {};
+    }
+    const text = readFileSync(projectCredentialsFile, "utf8");
+    return text.trim() ? JSON.parse(text) : {};
+  } catch {
     return {};
   }
 }
@@ -93,6 +111,10 @@ export function summarizeCredentials(platform, credentials = getCredentials(plat
       browserProfile: credentials?.browserProfile || ""
     }
   };
+}
+
+export function getCredentialStorePath() {
+  return credentialsFile;
 }
 
 function maskValue(value, visible = 4) {
