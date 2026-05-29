@@ -82,6 +82,7 @@ npm run smoke
 - [评审规则对照表](./docs/review-mapping.md)
 - [产品路线图](./docs/roadmap.md)
 - [API 契约草案](./docs/api-contract.md)
+- [隐私与离线说明](./docs/privacy.md)
 - [贡献规范](./CONTRIBUTING.md)
 - [版本说明](./RELEASE_NOTES.md)
 - [交付快照](./HANDOFF.md)

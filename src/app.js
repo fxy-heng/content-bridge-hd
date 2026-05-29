@@ -96,6 +96,7 @@ renderPlatformChoices();
 restoreDraftOrSample();
 adaptCurrentContent();
 renderLogs();
+registerServiceWorker();
 
 function sourceInputs() {
   return [
@@ -571,4 +572,15 @@ function debounce(fn, delay) {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => fn(...args), delay);
   };
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {
+      // 离线能力失败不影响主流程。
+    });
+  });
 }

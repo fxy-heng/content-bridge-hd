@@ -1,0 +1,18 @@
+{
+  "name": "ContentBridge 多平台内容发布工具",
+  "short_name": "ContentBridge",
+  "description": "一份内容自动适配多平台，支持模拟发布、排期、导出和扩展平台。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#eef1ef",
+  "theme_color": "#1f5f68",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

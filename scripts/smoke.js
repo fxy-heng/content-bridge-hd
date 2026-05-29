@@ -4,6 +4,9 @@ import { join } from "node:path";
 const root = process.cwd();
 const requiredFiles = [
   "index.html",
+  "manifest.webmanifest",
+  "service-worker.js",
+  "assets/icon.svg",
   "src/app.js",
   "src/core/adapters.js",
   "src/core/publisher.js",
@@ -25,6 +28,7 @@ const app = readFileSync(join(root, "src/app.js"), "utf8");
 const readme = readFileSync(join(root, "README.md"), "utf8");
 
 assertIncludes(html, "platformChoices", "platform selection container");
+assertIncludes(html, "manifest.webmanifest", "PWA manifest");
 assertIncludes(html, "readinessGrid", "readiness dashboard");
 assertIncludes(html, "templateSelect", "template selector");
 assertIncludes(app, "adaptForPlatforms", "adapter workflow");
