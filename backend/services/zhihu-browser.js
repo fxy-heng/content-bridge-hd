@@ -129,6 +129,20 @@ export async function publishArticle({ title, body, tags = [], dryRun = false })
     ], zhihuBody.slice(0, 50_000));
     diagnostics.push(bodyFilled ? "body_filled" : "body_missing");
 
+    const bodyState = await inspectBodyState(page);
+    diagnostics.push(`body_chars=${bodyState.charCount}`);
+    if (!bodyState.ok) {
+      diagnostics.push(...await collectDiagnostics(page));
+      return {
+        status: "manual_required",
+        platform: "zhihu",
+        mode: "real",
+        reason: "知乎编辑器显示内容但内部字数仍为 0，自动输入未被编辑器状态接收。已停止点击发布，请保留页面检查。",
+        currentUrl: page.url(),
+        diagnostics
+      };
+    }
+
     if (!titleFilled || !bodyFilled) {
       diagnostics.push(...await collectDiagnostics(page));
       return {
@@ -237,6 +251,27 @@ async function fillFirst(page, selectors, text, timeout = 15_000) {
 }
 
 async function fillElement(page, element, text) {
+  const tagName = await element.evaluate((node) => node.tagName?.toLowerCase() || "");
+  const editable = await element.evaluate((node) => Boolean(node.isContentEditable)).catch(() => false);
+
+  if (editable || tagName === "div") {
+    await element.click().catch(() => {});
+    await page.keyboard.down("Control");
+    await page.keyboard.press("KeyA");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+
+    const pasted = await pasteText(page, text);
+    if (!pasted) {
+      await page.keyboard.type(text, { delay: 1 });
+    }
+
+    await page.keyboard.press("Space");
+    await page.keyboard.press("Backspace");
+    await sleep(800);
+    return;
+  }
+
   await element.click({ clickCount: 3 }).catch(() => {});
   const filledByDom = await element.evaluate((node, value) => {
     const tagName = node.tagName?.toLowerCase();
@@ -248,11 +283,6 @@ async function fillElement(page, element, text) {
       node.dispatchEvent(new Event("change", { bubbles: true }));
       return true;
     }
-    if (node.isContentEditable) {
-      node.textContent = value;
-      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-      return true;
-    }
     return false;
   }, text).catch(() => false);
 
@@ -262,6 +292,37 @@ async function fillElement(page, element, text) {
   await page.keyboard.up("Control");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(text, { delay: 2 });
+}
+
+async function pasteText(page, text) {
+  try {
+    await page.evaluate(async (value) => {
+      await navigator.clipboard.writeText(value);
+    }, text);
+    await page.keyboard.down("Control");
+    await page.keyboard.press("KeyV");
+    await page.keyboard.up("Control");
+    await sleep(1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function inspectBodyState(page) {
+  return page.evaluate(() => {
+    const editor = document.querySelector(".DraftEditor-editorContainer [contenteditable='true'], .public-DraftEditor-content, .ProseMirror, .ql-editor, div[contenteditable='true'], [role='textbox']");
+    const editorText = (editor?.innerText || editor?.textContent || "").replace(/\s+/g, "");
+    const pageText = document.body?.innerText || "";
+    const wordCountMatch = pageText.match(/字数[:：]\s*(\d+)/);
+    const wordCount = wordCountMatch ? Number(wordCountMatch[1]) : NaN;
+    const charCount = Number.isFinite(wordCount) ? wordCount : editorText.length;
+    return {
+      ok: charCount > 0 && editorText.length > 0,
+      charCount,
+      editorTextLength: editorText.length
+    };
+  }).catch(() => ({ ok: false, charCount: 0, editorTextLength: 0 }));
 }
 
 async function clickButtonByText(page, labels) {
