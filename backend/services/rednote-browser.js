@@ -315,16 +315,19 @@ export async function diagnoseApiPublishReadiness() {
     const client = new XhsClient(cookies.map);
     const self = await client.getSelfInfo();
     const uploadPermit = await client.getUploadPermit("image", 1);
+
     return {
       ok: true,
       platform: "rednote",
-      currentUrl: page.url(),
-      cookieNames: Object.keys(cookies.map).sort(),
-      uploadPermit: {
-        fileId: Boolean(uploadPermit.fileId),
-        token: Boolean(uploadPermit.token)
+      ready: true,
+      account: {
+        nickname: self?.nickname || self?.red_id || "",
+        redId: self?.red_id || "",
+        avatar: self?.avatar || ""
       },
-      self
+      cookieNames: Object.keys(cookies.map).sort(),
+      uploadPermitReady: Boolean(uploadPermit?.fileId && uploadPermit?.token),
+      note: "小红书 API 发布通道就绪，可使用 @lucasygu/redbook 客户端创建图文笔记。"
     };
   } catch (error) {
     return {
