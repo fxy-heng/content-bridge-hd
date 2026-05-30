@@ -1,4 +1,4 @@
-const CACHE_NAME = "content-bridge-v2";
+const CACHE_NAME = "content-bridge-v3";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { checkLoginStatus, openLoginPage, publishNote } from "../services/rednote-browser.js";
+import {
+  checkLoginStatus,
+  diagnoseApiPublishReadiness,
+  diagnosePublishPageControls,
+  openLoginPage,
+  publishNote
+} from "../services/rednote-browser.js";
 
 const router = Router();
 
@@ -20,6 +26,24 @@ router.get("/status", async (req, res, next) => {
       connected: status.loggedIn,
       ...status
     });
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+router.get("/diagnose", async (req, res, next) => {
+  try {
+    res.json(await diagnoseApiPublishReadiness());
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+router.get("/diagnose-controls", async (req, res, next) => {
+  try {
+    res.json(await diagnosePublishPageControls());
   } catch (error) {
     error.status = 502;
     next(error);

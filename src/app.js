@@ -652,6 +652,10 @@ function renderPublishResults(results) {
       const diagnostics = Array.isArray(detail.diagnostics) && detail.diagnostics.length
         ? `<small>${escapeHtml(detail.diagnostics.join(" / "))}</small>`
         : "";
+      const buttonDiagnostics = detail.buttonDiagnostics || detail.detail?.buttonDiagnostics;
+      const rednoteDiagnostics = buttonDiagnostics
+        ? `<small>${escapeHtml(formatRednoteDiagnostics(buttonDiagnostics))}</small>`
+        : "";
 
       return `
         <article class="publish-result ${escapeHtml(result.status)}">
@@ -662,10 +666,26 @@ function renderPublishResults(results) {
           <p>${result.reason ? escapeHtml(result.reason) : "已完成请求"}</p>
           ${remoteParts.length ? `<p>${escapeHtml(remoteParts.join(" · "))}</p>` : ""}
           ${diagnostics}
+          ${rednoteDiagnostics}
         </article>
       `;
     })
     .join("");
+}
+
+function formatRednoteDiagnostics(diagnostics) {
+  const candidateCount = diagnostics.candidates?.length || 0;
+  const matches = diagnostics.textMatches || [];
+  const visualMatches = diagnostics.visualMatches || [];
+  const matchSummary = matches
+    .slice(0, 4)
+    .map((item) => `${item.tag}:${item.text || item.directText}@${item.rect.left},${item.rect.top},${item.rect.width}x${item.rect.height}`)
+    .join(" | ");
+  const visualSummary = visualMatches
+    .slice(0, 4)
+    .map((item) => `${item.tag}:${item.backgroundColor}@${item.rect.left},${item.rect.top},${item.rect.width}x${item.rect.height}`)
+    .join(" | ");
+  return `小红书按钮诊断：候选 ${candidateCount}；文本 ${matchSummary || "未找到"}；底部红色 ${visualSummary || "未找到"}`;
 }
 
 function renderLogs() {
