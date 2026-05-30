@@ -3,11 +3,14 @@ import { getCredentials } from "../storage/credentials-store.js";
 import {
   createDraft,
   getAccessToken,
+  getDraftSwitchStatus,
   getPublishStatus,
+  openDraftSwitch,
   publishDraft,
   uploadGeneratedCover,
   uploadImage,
-  verifyCredentials
+  verifyCredentials,
+  WechatApiError
 } from "../services/wechat-api.js";
 
 const router = Router();
@@ -72,7 +75,24 @@ router.post("/publish", async (req, res, next) => {
       thumbMediaId
     });
 
-    const publishResult = await publishDraft(credentials.appId, credentials.appSecret, mediaId);
+    let publishResult = null;
+    try {
+      publishResult = await publishDraft(credentials.appId, credentials.appSecret, mediaId);
+    } catch (error) {
+      if (error instanceof WechatApiError && String(error.code) === "48001") {
+        res.json({
+          status: "draft_ready",
+          platform: "wechat",
+          mode: "real",
+          mediaId,
+          reason: "公众号草稿已创建成功，但当前账号没有微信 freepublish 发布接口权限。请到公众号后台草稿箱手动发布。",
+          publishedAt: new Date().toISOString()
+        });
+        return;
+      }
+      throw error;
+    }
+
     res.json({
       status: "success",
       platform: "wechat",
@@ -137,6 +157,44 @@ router.get("/capabilities", async (req, res) => {
     platform: "wechat",
     checks
   });
+});
+
+router.get("/draft-switch", async (req, res, next) => {
+  const credentials = getCredentials("wechat");
+  if (!credentials?.appId || !credentials?.appSecret) {
+    res.status(400).json({ ok: false, code: "MISSING_WECHAT_CREDENTIALS", error: "WeChat credentials are not configured." });
+    return;
+  }
+
+  try {
+    res.json({
+      ok: true,
+      platform: "wechat",
+      ...(await getDraftSwitchStatus(credentials.appId, credentials.appSecret))
+    });
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
+});
+
+router.post("/draft-switch", async (req, res, next) => {
+  const credentials = getCredentials("wechat");
+  if (!credentials?.appId || !credentials?.appSecret) {
+    res.status(400).json({ ok: false, code: "MISSING_WECHAT_CREDENTIALS", error: "WeChat credentials are not configured." });
+    return;
+  }
+
+  try {
+    res.json({
+      ok: true,
+      platform: "wechat",
+      ...(await openDraftSwitch(credentials.appId, credentials.appSecret))
+    });
+  } catch (error) {
+    error.status = 502;
+    next(error);
+  }
 });
 
 router.get("/publish/:publishId", async (req, res, next) => {

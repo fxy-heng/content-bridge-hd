@@ -647,6 +647,7 @@ function renderPublishResults(results) {
       const remoteParts = [
         detail.publishId ? `publishId: ${detail.publishId}` : "",
         detail.mediaId ? `mediaId: ${detail.mediaId}` : "",
+        detail.status === "draft_ready" ? "公众号草稿箱已创建" : "",
         detail.currentUrl ? `URL: ${detail.currentUrl}` : ""
       ].filter(Boolean);
       const diagnostics = Array.isArray(detail.diagnostics) && detail.diagnostics.length

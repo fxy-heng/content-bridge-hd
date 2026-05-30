@@ -66,7 +66,7 @@ export async function publishToPlatforms(adaptedItems, options = {}) {
       if (backend.available && supportsRealPublish(item.platform) && backend.realPlatforms.has(item.platform)) {
         try {
           const realResult = await realPublish(item);
-          const status = realResult.status === "success" ? "success" : "failed";
+          const status = realResult.status === "success" || realResult.status === "draft_ready" ? "success" : "failed";
           return buildResult(item, index, now, status, realResult.reason || "", realResult.detail, "real");
         } catch (err) {
           return buildResult(item, index, now, "failed", err.message || "Real publish request failed.", null, "real");

@@ -134,12 +134,53 @@ export async function publishDraft(appId, appSecret, mediaId) {
   const data = await response.json();
 
   if (!response.ok || data.errcode) {
-    throw new Error(formatWechatError("publish submit failed", data));
+    throw new WechatApiError(formatWechatError("publish submit failed", data), data.errcode, data);
   }
 
   return {
     publishId: String(data.publish_id || ""),
     msgId: data.msg_data_id ? String(data.msg_data_id) : ""
+  };
+}
+
+export class WechatApiError extends Error {
+  constructor(message, code, response) {
+    super(message);
+    this.name = "WechatApiError";
+    this.code = code;
+    this.response = response;
+  }
+}
+
+export async function getDraftSwitchStatus(appId, appSecret) {
+  const token = await getAccessToken(appId, appSecret);
+  const url = `${WECHAT_API}/cgi-bin/draft/switch?access_token=${encodeURIComponent(token)}&checkonly=1`;
+  const response = await fetch(url, { method: "POST" });
+  const data = await response.json();
+
+  if (!response.ok || data.errcode) {
+    throw new WechatApiError(formatWechatError("draft switch status request failed", data), data.errcode, data);
+  }
+
+  return {
+    isOpen: Number(data.is_open) === 1,
+    raw: data
+  };
+}
+
+export async function openDraftSwitch(appId, appSecret) {
+  const token = await getAccessToken(appId, appSecret);
+  const url = `${WECHAT_API}/cgi-bin/draft/switch?access_token=${encodeURIComponent(token)}`;
+  const response = await fetch(url, { method: "POST" });
+  const data = await response.json();
+
+  if (!response.ok || data.errcode) {
+    throw new WechatApiError(formatWechatError("draft switch open request failed", data), data.errcode, data);
+  }
+
+  return {
+    isOpen: true,
+    raw: data
   };
 }
 
