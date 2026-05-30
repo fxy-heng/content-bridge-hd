@@ -137,8 +137,11 @@ export async function publishArticle({ title, body, tags = [], coverUrl = "" }) 
       diagnostics.push(tagFilled ? "tags_filled" : "tags_skipped");
     }
 
-    const clicked = await clickButtonByText(page, ["发布", "提交", "立即发布"]);
-    if (!clicked) {
+    const beforePublish = await inspectPublishState(page);
+    diagnostics.push(`publish_candidates=${beforePublish.candidates.length}`);
+
+    const clickResult = await submitPublishFlow(page, beforePublish);
+    if (!clickResult.clicked) {
       return {
         status: "manual_required",
         platform: "bilibili",
@@ -149,8 +152,20 @@ export async function publishArticle({ title, body, tags = [], coverUrl = "" }) 
       };
     }
 
-    diagnostics.push("publish_clicked");
-    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15_000 }).catch(() => {});
+    diagnostics.push(`publish_clicked=${clickResult.clicks.map((item) => item.text).join(">")}`);
+    const afterPublish = clickResult.afterPublish;
+    diagnostics.push(`after_url=${afterPublish.url}`);
+    if (!isPublishConfirmed(beforePublish, afterPublish)) {
+      return {
+        status: "manual_required",
+        platform: "bilibili",
+        mode: "real",
+        reason: "B站发布按钮已点击，但页面仍停留在编辑器或未出现提交成功状态。请检查是否需要补充必填项、二次确认或处理平台校验。",
+        currentUrl: page.url(),
+        diagnostics,
+        detail: { beforePublish, afterPublish }
+      };
+    }
 
     return {
       status: "success",
@@ -164,6 +179,33 @@ export async function publishArticle({ title, body, tags = [], coverUrl = "" }) 
   } catch (error) {
     return failed(error.message || "Bilibili publish automation failed.", page, diagnostics);
   }
+}
+
+async function submitPublishFlow(page, beforePublish) {
+  const clicks = [];
+  let afterPublish = beforePublish;
+  const labelRounds = [
+    ["发布", "立即发布", "提交"],
+    ["确定", "确认", "确认发布", "立即发布", "提交"]
+  ];
+
+  for (const labels of labelRounds) {
+    const clicked = await clickButtonByText(page, labels, { allowDialog: clicks.length > 0 });
+    if (!clicked) {
+      continue;
+    }
+
+    clicks.push(clicked);
+    await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15_000 }).catch(() => {});
+    await sleep(800);
+    afterPublish = await inspectPublishState(page);
+
+    if (isPublishConfirmed(beforePublish, afterPublish)) {
+      return { clicked: true, clicks, afterPublish };
+    }
+  }
+
+  return { clicked: clicks.length > 0, clicks, afterPublish };
 }
 
 async function gotoEditor(page, diagnostics) {
@@ -205,19 +247,119 @@ async function fillFirst(page, selectors, text) {
   return false;
 }
 
-async function clickButtonByText(page, labels) {
-  return page.evaluate((buttonLabels) => {
-    const candidates = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button']"));
-    const target = candidates.find((element) => {
-      const text = (element.textContent || "").replace(/\s+/g, "");
-      return buttonLabels.some((label) => text.includes(label));
-    });
-    if (!target) {
+async function clickButtonByText(page, labels, options = {}) {
+  const point = await page.evaluate((buttonLabels, clickOptions) => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const hasDialog = Boolean(document.querySelector('[role="dialog"], .modal, [class*="modal"], [class*="dialog"], [class*="Dialog"]'));
+    const candidates = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button'],div,span"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const text = (element.textContent || "").replace(/\s+/g, "");
+        const style = getComputedStyle(element);
+        const disabled = element.disabled === true || element.getAttribute("aria-disabled") === "true" || style.pointerEvents === "none";
+        const visible = style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+        const bottomAction = rect.top > viewport.height * 0.58 || /fixed|sticky/.test(style.position);
+        const dialogAction = clickOptions.allowDialog && hasDialog && rect.top > viewport.height * 0.25;
+        const blueLike = /rgba?\(\s*(0|[1-9]\d|1[0-2]\d)\s*,\s*(80|[9-9]\d|1[0-6]\d)\s*,\s*(1[5-9]\d|2[0-5]\d)/.test(style.backgroundColor) || /primary|submit|publish/i.test(String(element.className));
+        return { element, rect, text, disabled, visible, bottomAction, dialogAction, blueLike };
+      })
+      .filter(({ rect, text, disabled, visible, bottomAction, dialogAction }) => (
+        text &&
+        visible &&
+        !disabled &&
+        rect.width >= 40 &&
+        rect.height >= 24 &&
+        (bottomAction || dialogAction) &&
+        buttonLabels.some((label) => text === label || text.includes(label))
+      ));
+
+    if (!candidates.length) {
       return false;
     }
-    target.click();
+
+    candidates.sort((a, b) => {
+      const exactA = buttonLabels.includes(a.text) ? 0 : 1;
+      const exactB = buttonLabels.includes(b.text) ? 0 : 1;
+      if (exactA !== exactB) return exactA - exactB;
+      if (a.blueLike !== b.blueLike) return a.blueLike ? -1 : 1;
+      return b.rect.top - a.rect.top;
+    });
+
+    const target = candidates[0];
+    target.element.scrollIntoView({ block: "center", inline: "center" });
+    const rect = target.element.getBoundingClientRect();
+    return {
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + rect.height / 2),
+      text: target.text,
+      className: String(target.element.className || "").slice(0, 80)
+    };
+  }, labels, options);
+
+  if (!point) return false;
+  await page.mouse.move(point.x, point.y);
+  await sleep(80);
+  await page.mouse.down();
+  await sleep(100);
+  await page.mouse.up();
+  return point;
+}
+
+async function inspectPublishState(page) {
+  return page.evaluate(() => {
+    const pageText = (document.body?.innerText || "").replace(/\s+/g, " ").trim();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const candidates = Array.from(document.querySelectorAll("button,[role='button'],.btn,[class*='button'],div,span"))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const text = (element.textContent || "").replace(/\s+/g, "");
+        const style = getComputedStyle(element);
+        if (!text || rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden") {
+          return null;
+        }
+        if (!/发布|提交|立即发布|完成|确定/.test(text)) {
+          return null;
+        }
+        return {
+          tag: element.tagName,
+          text: text.slice(0, 40),
+          className: String(element.className || "").slice(0, 80),
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          },
+          backgroundColor: style.backgroundColor,
+          disabled: element.disabled === true || element.getAttribute("aria-disabled") === "true",
+          bottomLike: rect.top > viewport.height * 0.58 || /fixed|sticky/.test(style.position)
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 20);
+    return {
+      url: window.location.href,
+      title: document.title,
+      hasSuccessText: /发布成功|提交成功|审核中|已提交|稿件管理|内容管理/.test(pageText),
+      stillEditor: /read-editor|upload\/text\/edit/.test(window.location.href),
+      pageText: pageText.slice(0, 500),
+      candidates
+    };
+  });
+}
+
+function isPublishConfirmed(beforePublish, afterPublish) {
+  if (afterPublish.hasSuccessText) {
     return true;
-  }, labels);
+  }
+  if (afterPublish.url !== beforePublish.url && !afterPublish.stillEditor) {
+    return true;
+  }
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function failed(reason, page, diagnostics) {

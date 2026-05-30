@@ -1,4 +1,5 @@
 import { getPlatformRegistry } from "./adapters.js";
+import { extensionLevels } from "./extension-blueprint.js";
 
 export function buildPlatformRulesMarkdown(customPlatforms = []) {
   const registry = getPlatformRegistry(customPlatforms);
@@ -21,8 +22,18 @@ export function buildPlatformRulesMarkdown(customPlatforms = []) {
     "## 扩展方式",
     "",
     "新增平台时需要定义平台 Key、名称、风格、发布类型、标题上限、标签上限、正文建议长度和封面建议。",
-    "这些配置会进入统一的适配、校验、导出和模拟发布流程。"
+    "这些配置会进入统一的适配、校验、导出和模拟发布流程。",
+    "",
+    "## 扩展架构层级",
+    ""
   );
+
+  extensionLevels.forEach((level, index) => {
+    lines.push(
+      `${index + 1}. **${level.name}**：${level.summary}`,
+      `   相关文件：${level.files.join("、")}`
+    );
+  });
 
   return lines.join("\n");
 }

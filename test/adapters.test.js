@@ -8,6 +8,7 @@ import {
   validateAdaptedContent
 } from "../src/core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "../src/core/calendar.js";
+import { buildExtensionReadiness, extensionLevels, platformPresetSuggestions } from "../src/core/extension-blueprint.js";
 import { parseMarkdownDraft } from "../src/core/markdown.js";
 import { exportPlatformPreset, importPlatformPreset } from "../src/core/platform-presets.js";
 import { publishToPlatforms } from "../src/core/publisher.js";
@@ -217,6 +218,18 @@ test("exports platform rules as markdown", () => {
   assert.ok(markdown.includes("ContentBridge 平台规则说明"));
   assert.ok(markdown.includes("公众号"));
   assert.ok(markdown.includes("抖音"));
+  assert.ok(markdown.includes("扩展架构层级"));
+  assert.ok(markdown.includes("发布器扩展"));
+});
+
+test("describes platform extension blueprint", () => {
+  const readiness = buildExtensionReadiness(customPlatforms);
+
+  assert.equal(extensionLevels.length, 3);
+  assert.ok(platformPresetSuggestions.some((item) => item.key === "douyin"));
+  assert.equal(readiness.customCount, 1);
+  assert.equal(readiness.levels[0].status, "active");
+  assert.ok(readiness.nextSuggestion.includes("内置适配器"));
 });
 
 test("simulated publisher returns publish results", async () => {

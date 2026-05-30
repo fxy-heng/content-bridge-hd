@@ -123,6 +123,8 @@
 
           <details class="extension-panel">
             <summary>扩展更多平台</summary>
+            <div class="extension-blueprint" id="extensionBlueprint"></div>
+            <div class="preset-row" id="platformPresetSuggestions"></div>
             <div class="extension-grid">
               <label>
                 平台 Key
@@ -164,48 +166,7 @@
               <button type="button" id="resetPlatforms">重置自定义平台</button>
               <input id="platformPresetFile" class="hidden-file" type="file" accept="application/json" />
             </div>
-          </details>
-
-          <details class="extension-panel">
-            <summary>账号设置</summary>
-            <div class="account-form">
-              <label>
-                公众号 AppID
-                <input id="wechatAppId" placeholder="例如 wx1234567890" />
-              </label>
-              <label>
-                公众号 AppSecret
-                <input id="wechatAppSecret" type="password" placeholder="请输入 AppSecret" />
-              </label>
-              <label>
-                公众号 thumb_media_id（选填）
-                <input id="wechatThumbMediaId" placeholder="已有永久封面素材时填写；否则发布时使用封面图 URL 自动上传" />
-              </label>
-              <label>
-                作者名称（选填）
-                <input id="wechatAuthor" placeholder="文章作者署名" />
-              </label>
-              <div class="account-status" id="wechatStatus"></div>
-              <p class="field-hint">公众号会优先使用官方 API 创建草稿并提交发布；若账号没有 `freepublish_submit` 权限，系统会保留已创建的草稿并提示到公众号后台发布。</p>
-              <button type="button" id="saveWechatCreds">保存并验证</button>
-              <button type="button" id="removeWechatCreds">删除凭证</button>
-            </div>
-            <div class="account-form account-section">
-              <div class="account-status disconnected" id="zhihuStatus">知乎未检测</div>
-              <button type="button" id="openZhihuLogin">打开知乎登录</button>
-              <button type="button" id="refreshZhihuStatus">刷新知乎登录态</button>
-            </div>
-            <div class="account-form account-section">
-              <div class="account-status disconnected" id="bilibiliStatus">B站未检测</div>
-              <button type="button" id="openBilibiliLogin">打开 B站扫码登录</button>
-              <button type="button" id="refreshBilibiliStatus">刷新 B站登录态</button>
-            </div>
-            <div class="account-form account-section">
-              <div class="account-status disconnected" id="rednoteStatus">小红书未检测</div>
-              <button type="button" id="openRednoteLogin">打开小红书登录</button>
-              <button type="button" id="refreshRednoteStatus">刷新小红书登录态</button>
-            </div>
-            <p class="account-note">知乎、B站、小红书通过本机浏览器资料目录保存登录态。第一次使用请先启动后端，再完成网页登录。</p>
+            <div class="custom-platform-list" id="customPlatformList"></div>
           </details>
 
           <div class="actions">
@@ -240,6 +201,94 @@
 
           <div class="preview-grid" id="previewGrid"></div>
         </section>
+      </section>
+
+      <section class="account-panel">
+        <div class="panel-title">
+          <h2>账号设置</h2>
+          <p>集中管理真实发布需要的账号凭证和网页登录态。</p>
+        </div>
+        <div class="account-grid">
+          <article class="account-card account-card-wide" data-platform="wechat">
+            <div class="account-card-head">
+              <span class="account-icon">微</span>
+              <div>
+                <strong>公众号</strong>
+                <small>官方 API · 草稿箱 / 发布接口</small>
+              </div>
+            </div>
+            <div class="account-fields">
+              <label>
+                AppID
+                <input id="wechatAppId" placeholder="例如 wx1234567890" />
+              </label>
+              <label>
+                AppSecret
+                <input id="wechatAppSecret" type="password" placeholder="请输入 AppSecret" />
+              </label>
+              <label>
+                thumb_media_id（选填）
+                <input id="wechatThumbMediaId" placeholder="已有永久封面素材时填写；否则发布时使用封面图 URL 自动上传" />
+              </label>
+              <label>
+                作者名称（选填）
+                <input id="wechatAuthor" placeholder="文章作者署名" />
+              </label>
+            </div>
+            <div class="account-status" id="wechatStatus"></div>
+            <p class="field-hint">公众号会优先使用官方 API 创建草稿并提交发布；若账号没有 `freepublish_submit` 权限，系统会保留已创建的草稿并提示到公众号后台发布。</p>
+            <div class="account-actions">
+              <button type="button" id="saveWechatCreds">保存并验证</button>
+              <button type="button" id="removeWechatCreds">删除凭证</button>
+            </div>
+          </article>
+
+          <article class="account-card" data-platform="zhihu">
+            <div class="account-card-head">
+              <span class="account-icon">知</span>
+              <div>
+                <strong>知乎</strong>
+                <small>浏览器登录态</small>
+              </div>
+            </div>
+            <div class="account-status disconnected" id="zhihuStatus">知乎未检测</div>
+            <div class="account-actions">
+              <button type="button" id="openZhihuLogin">打开登录</button>
+              <button type="button" id="refreshZhihuStatus">刷新状态</button>
+            </div>
+          </article>
+
+          <article class="account-card" data-platform="bilibili">
+            <div class="account-card-head">
+              <span class="account-icon">B</span>
+              <div>
+                <strong>B站</strong>
+                <small>扫码登录态</small>
+              </div>
+            </div>
+            <div class="account-status disconnected" id="bilibiliStatus">B站未检测</div>
+            <div class="account-actions">
+              <button type="button" id="openBilibiliLogin">打开扫码</button>
+              <button type="button" id="refreshBilibiliStatus">刷新状态</button>
+            </div>
+          </article>
+
+          <article class="account-card" data-platform="rednote">
+            <div class="account-card-head">
+              <span class="account-icon">红</span>
+              <div>
+                <strong>小红书</strong>
+                <small>浏览器登录态</small>
+              </div>
+            </div>
+            <div class="account-status disconnected" id="rednoteStatus">小红书未检测</div>
+            <div class="account-actions">
+              <button type="button" id="openRednoteLogin">打开登录</button>
+              <button type="button" id="refreshRednoteStatus">刷新状态</button>
+            </div>
+          </article>
+        </div>
+        <p class="account-note">知乎、B站、小红书通过本机浏览器资料目录保存登录态。第一次使用请先启动后端，再完成网页登录。</p>
       </section>
 
       <section class="snapshot-panel">

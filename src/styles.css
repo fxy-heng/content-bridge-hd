@@ -404,10 +404,70 @@ legend { padding: 0 10px; font-size: 0.84rem; font-weight: 650; color: var(--tex
 .extension-panel summary { cursor: pointer; font-weight: 680; font-size: 0.86rem; color: var(--text-secondary); }
 .extension-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 
-/* Account settings */
-.account-form { display: grid; gap: 10px; margin-top: 12px; }
-.account-section { border-top: 1px solid var(--border); padding-top: 12px; }
+.extension-blueprint {
+  margin-top: 12px; padding: 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: #fbfcfe;
+}
+.blueprint-head { display: grid; gap: 4px; margin-bottom: 10px; }
+.blueprint-head strong { font-size: 0.86rem; color: var(--text-primary); }
+.blueprint-head span { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+.blueprint-steps { display: grid; gap: 8px; }
+.blueprint-step {
+  padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface); position: relative; overflow: hidden;
+}
+.blueprint-step::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--text-muted);
+}
+.blueprint-step.ready::before { background: var(--accent); }
+.blueprint-step.active::before { background: var(--success); }
+.blueprint-step strong { display: block; font-size: 0.8rem; margin-bottom: 4px; }
+.blueprint-step p { margin: 0; color: var(--text-muted); font-size: 0.76rem; line-height: 1.5; }
 
+.preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.preset-row button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
+  border: 1px solid var(--border); box-shadow: none; background: #fff;
+  color: var(--text-secondary);
+}
+.preset-row button span { color: var(--text-muted); font-size: 0.72rem; }
+.custom-platform-list { display: grid; gap: 8px; margin-top: 12px; }
+.custom-platform-list > strong { font-size: 0.8rem; color: var(--text-secondary); }
+.custom-platform-list article {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: #fff;
+}
+.custom-platform-list span { display: block; font-weight: 650; font-size: 0.82rem; }
+.custom-platform-list small { color: var(--text-muted); font-size: 0.74rem; line-height: 1.45; }
+
+/* Account settings */
+.account-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-sm);
+}
+.account-grid {
+  display: grid; grid-template-columns: 1.35fr repeat(3, minmax(160px, 1fr));
+  gap: 12px; margin-top: 12px;
+}
+.account-card {
+  display: grid; gap: 12px; align-content: start;
+  padding: 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: #fff; box-shadow: var(--shadow-xs);
+}
+.account-card-wide { grid-column: auto; }
+.account-card-head { display: flex; align-items: center; gap: 10px; }
+.account-card-head strong { display: block; font-size: 0.9rem; color: var(--text-primary); }
+.account-card-head small { color: var(--text-muted); font-size: 0.74rem; }
+.account-icon {
+  width: 30px; height: 30px; border-radius: 8px; display: inline-grid; place-items: center;
+  color: #fff; font-weight: 800; font-size: 0.82rem; flex: 0 0 auto;
+}
+.account-card[data-platform="wechat"] .account-icon { background: var(--pl-wechat); }
+.account-card[data-platform="zhihu"] .account-icon { background: var(--pl-zhihu); }
+.account-card[data-platform="bilibili"] .account-icon { background: var(--pl-bilibili); }
+.account-card[data-platform="rednote"] .account-icon { background: var(--pl-rednote); }
+.account-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .account-status {
   padding: 8px 14px; border-radius: var(--radius-sm);
   font-size: 0.8rem; font-weight: 550;
@@ -415,6 +475,8 @@ legend { padding: 0 10px; font-size: 0.84rem; font-weight: 650; color: var(--tex
 .account-status.connected    { background: var(--success-light); color: #065f46; }
 .account-status.disconnected { background: #f5f6f8; color: var(--text-muted); }
 .account-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-actions button { box-shadow: none; }
 
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -543,7 +605,8 @@ legend { padding: 0 10px; font-size: 0.84rem; font-weight: 650; color: var(--tex
   .topbar { flex-direction: column; align-items: flex-start; padding: 20px; }
   .topbar::before, .topbar::after { display: none; }
   .metric-row { width: 100%; }
-  .two-fields, .platform-choices, .extension-grid { grid-template-columns: 1fr; }
+  .two-fields, .platform-choices, .extension-grid, .account-grid, .account-fields { grid-template-columns: 1fr; }
+  .account-card-wide { grid-column: auto; }
   .readiness-grid { grid-template-columns: 1fr; }
   .preview-grid { grid-template-columns: 1fr; }
   .workflow-bar { padding: 12px 16px; gap: 2px; }

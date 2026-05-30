@@ -7,6 +7,7 @@ import {
   scoreSourceContent
 } from "./core/adapters.js";
 import { buildScheduleCalendar, countScheduledItems } from "./core/calendar.js";
+import { buildExtensionReadiness, platformPresetSuggestions } from "./core/extension-blueprint.js";
 import { parseMarkdownDraft } from "./core/markdown.js";
 import { exportPlatformPreset, importPlatformPreset } from "./core/platform-presets.js";
 import { publishToPlatforms } from "./core/publisher.js";
@@ -72,6 +73,9 @@ const elements = {
   clearLog: document.querySelector("#clearLog"),
   logCsv: document.querySelector("#logCsv"),
   addPlatform: document.querySelector("#addPlatform"),
+  extensionBlueprint: document.querySelector("#extensionBlueprint"),
+  platformPresetSuggestions: document.querySelector("#platformPresetSuggestions"),
+  customPlatformList: document.querySelector("#customPlatformList"),
   exportPlatforms: document.querySelector("#exportPlatforms"),
   importPlatforms: document.querySelector("#importPlatforms"),
   exportRules: document.querySelector("#exportRules"),
@@ -125,6 +129,7 @@ elements.clearLog.addEventListener("click", clearLogs);
 elements.readinessCsv.addEventListener("click", exportReadinessCsv);
 elements.logCsv.addEventListener("click", exportLogCsv);
 elements.addPlatform.addEventListener("click", addCustomPlatform);
+elements.platformPresetSuggestions.addEventListener("click", applyPlatformPresetSuggestion);
 elements.exportPlatforms.addEventListener("click", exportCustomPlatforms);
 elements.importPlatforms.addEventListener("click", () => elements.platformPresetFile.click());
 elements.platformPresetFile.addEventListener("change", importCustomPlatforms);
@@ -147,6 +152,7 @@ sourceInputs().forEach((input) => {
 });
 
 renderTemplateOptions();
+renderExtensionBlueprint();
 renderPlatformChoices();
 loadCredentialStatus();
 restoreDraftOrSample();
@@ -424,6 +430,69 @@ function renderPlatformChoices() {
   document.querySelectorAll("input[name='platform']").forEach((input) => {
     input.addEventListener("change", adaptCurrentContent);
   });
+
+  renderExtensionBlueprint();
+  renderCustomPlatformList();
+}
+
+function renderExtensionBlueprint() {
+  const readiness = buildExtensionReadiness(state.customPlatforms);
+  elements.extensionBlueprint.innerHTML = `
+    <div class="blueprint-head">
+      <strong>平台扩展蓝图</strong>
+      <span>${escapeHtml(readiness.nextSuggestion)}</span>
+    </div>
+    <div class="blueprint-steps">
+      ${readiness.levels.map((level, index) => `
+        <article class="blueprint-step ${escapeHtml(level.status)}">
+          <strong>${index + 1}. ${escapeHtml(level.name)}</strong>
+          <p>${escapeHtml(level.summary)}</p>
+        </article>
+      `).join("")}
+    </div>
+  `;
+
+  elements.platformPresetSuggestions.innerHTML = platformPresetSuggestions
+    .map((platform) => `
+      <button type="button" data-preset="${escapeHtml(platform.key)}">
+        ${escapeHtml(platform.displayName)}
+        <span>${escapeHtml(platform.tone)}</span>
+      </button>
+    `)
+    .join("");
+}
+
+function renderCustomPlatformList() {
+  if (!state.customPlatforms.length) {
+    elements.customPlatformList.innerHTML = '<p class="empty">暂无自定义平台。可使用上方预设快速填充，也可以手动配置。</p>';
+    return;
+  }
+
+  elements.customPlatformList.innerHTML = `
+    <strong>已扩展平台</strong>
+    ${state.customPlatforms.map((platform) => `
+      <article>
+        <div>
+          <span>${escapeHtml(platform.displayName)}</span>
+          <small>${escapeHtml(platform.key)} · ${escapeHtml(platform.publishMode)}</small>
+        </div>
+        <small>标题 ${platform.limits.titleMax} / 标签 ${platform.limits.tagMax} / 正文 ${platform.limits.bodyMin}${platform.requiresCover ? " / 封面" : ""}</small>
+      </article>
+    `).join("")}
+  `;
+}
+
+function applyPlatformPresetSuggestion(event) {
+  const button = event.target.closest("[data-preset]");
+  if (!button) {
+    return;
+  }
+  const preset = platformPresetSuggestions.find((item) => item.key === button.dataset.preset);
+  if (!preset) {
+    return;
+  }
+  writeCustomPlatformForm(preset);
+  elements.summaryText.textContent = `${preset.displayName} 平台预设已填入，可继续调整后添加`;
 }
 
 function addCustomPlatform() {
@@ -450,6 +519,17 @@ function addCustomPlatform() {
   renderPlatformChoices();
   adaptCurrentContent();
   elements.summaryText.textContent = "自定义平台已添加";
+}
+
+function writeCustomPlatformForm(platform) {
+  elements.customKey.value = platform.key || "";
+  elements.customName.value = platform.displayName || "";
+  elements.customTitleMax.value = platform.limits?.titleMax || "55";
+  elements.customTagMax.value = platform.limits?.tagMax || "8";
+  elements.customBodyMin.value = platform.limits?.bodyMin || "60";
+  elements.customTone.value = platform.tone || "";
+  elements.customMode.value = platform.publishMode || "";
+  elements.customCover.checked = Boolean(platform.requiresCover);
 }
 
 function resetCustomPlatforms() {
