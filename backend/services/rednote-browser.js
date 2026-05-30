@@ -535,12 +535,14 @@ function buildRednoteWebUrl(noteId, xsecToken) {
 
 function formatApiPublishError(error) {
   if (error instanceof NeedVerifyError) {
-    return `小红书 API 发布触发验证码/风控（${error.verifyType}），回退浏览器自动化。`;
+    return `小红书触发风控验证（类型: ${error.verifyType || "未知"}），请稍后重试或手动完成验证。`;
   }
   if (error instanceof XhsApiError) {
-    return `${error.message}，回退浏览器自动化。`;
+    const code = error.code ? ` [code: ${error.code}]` : "";
+    return `小红书 API 错误${code}: ${error.message}，回退浏览器自动化。`;
   }
-  return `${error.message || "小红书 API 发布失败"}，回退浏览器自动化。`;
+  const name = error.name ? `[${error.name}] ` : "";
+  return `${name}${error.message || "小红书 API 发布失败"}，回退浏览器自动化。`;
 }
 
 async function findPublishButtonCandidates(page) {
